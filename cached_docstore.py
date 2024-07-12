@@ -36,7 +36,7 @@ class CachedDocStore(BaseStore[str, Document]):
         self,
         root_path: Optional[Union[str, Path]] = None,
         *,
-        cached: bool = False,
+        cached: bool = True,
         chmod_file: Optional[int] = None,
         chmod_dir: Optional[int] = None,
         update_atime: bool = False,

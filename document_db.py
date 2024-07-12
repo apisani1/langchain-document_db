@@ -1,29 +1,28 @@
-# pylint: disable=pedantic
-
 import shutil
 from pathlib import Path
 from typing import (
     Any,
+    Dict,
+    List,
     Optional,
     Union,
 )
 
+from sqlalchemy import (
+    URL,
+    Engine,
+)
+from sqlalchemy.ext.asyncio import AsyncEngine
+
 from langchain.docstore.document import Document
-from langchain.indexes import SQLRecordManager
-from langchain.schema.embeddings import Embeddings
+from langchain.indexes import (
+    SQLRecordManager,
+    index,
+)
 from langchain.schema.vectorstore import VectorStore
 
-from ..exception import exception_handler
-from ._api import index
-from .chroma_store import ChromaStore
-from .embedding_retriever import EmbeddingRetriever
-from .embedding_store import EmbeddingStore
 
-
-DB_DIRECTORY = Path("/Users/antonio/Desktop/DataScience/MyData")
-
-
-class DocumentDB(EmbeddingRetriever):
+class DocumentDB:
     """
     This class lets you load and keep in sync documents from any source into a vector store using an index.
     Specifically, it helps:
@@ -34,72 +33,48 @@ class DocumentDB(EmbeddingRetriever):
     (e.g., via text chunking) with respect to the original source documents.
 
     Args:
-            db_name (str): the name of the sub-directory where the vectot store and index will be saved
-            vector_store (_VectorStore, optional): The vectore store to store the embeddings.
-                                                   Defaults to Chroma with OpenAI Embeddings.
+            loacation (Path  str): the directory where the index will be saved
+            vectorstore (VectorStore): The vectore store to store the embeddings.
     """
 
-    namespace: str
-    location: Path
-    vector_store: EmbeddingStore
-    record_manager: SQLRecordManager
-
-    @classmethod
-    def connect(
-        cls, db_name: str, vector_store: Optional[EmbeddingStore] = None, **kwargs: Any
-    ) -> "DocumentDB":
-        namespace = db_name
-        location = DB_DIRECTORY / db_name
-        vector_store = vector_store or ChromaStore.connect(
-            index_name=(location / "vector_store").as_posix(), **kwargs
+    def __init__(
+        self,
+        location: Union[Path, str],
+        vectorstore: VectorStore,
+        sql_engine: Optional[Union[Engine, AsyncEngine]] = None,
+        db_url: Optional[Union[str, URL]] = None,
+        engine_kwargs: Optional[Dict[str, Any]] = None,
+        async_mode: bool = False,
+        **kwargs,
+    ) -> None:
+        self.location = Path(location).resolve()
+        self.namespace = self.location.name
+        self.vectorstore = vectorstore
+        self.location.mkdir(parents=True, exist_ok=True)
+        if not sql_engine and not db_url:
+            db_url = f"sqlite:///{self.location.as_posix()}/record_manager_cache.sql"
+        self.record_manager = SQLRecordManager(
+            self.namespace,
+            engine=sql_engine,
+            db_url=db_url,
+            engine_kwargs=engine_kwargs,
+            async_mode=async_mode,
         )
-        location.mkdir(parents=True, exist_ok=True)
-        record_manager = SQLRecordManager(
-            namespace,
-            db_url=f"sqlite:///{location.as_posix()}/record_manager_cache.sql",
-        )
-        record_manager.create_schema()
-        return cls(store=vector_store.store, vector_store=vector_store, record_manager=record_manager, namespace=namespace, location=location)
+        self.record_manager.create_schema()
 
-    def __del__(self) -> None:
-        self.vector_store.embedding.save()
-        pass
+    def as_retriever(self, *args, **kwargs) -> VectorStore:
+        return self.vectorstore.as_retriever(*args, **kwargs)
 
-    @exception_handler
-    def get_langchain_store(self) -> VectorStore:
-        return self.store
-
-    @exception_handler
-    def get_embedding_function(self) -> Embeddings:
-        return self.vector_store.embedding.model
-
-    @exception_handler
-    def get_index(self, *args: Any, **kwargs: Any) -> Any:
-        return self.vector_store.get_index(*args, **kwargs)
-
-    @exception_handler
-    def size(self) -> int:
-        return self.vector_store.size()
-
-    @exception_handler
-    def delete_index(self, *args: Any, **kwargs: Any) -> bool:
+    def delete_index(self) -> None:
         """
-        Deletes the index, vector store and enclosing direectory.
+        Deletes the index and enclosing direectory.
         """
-        self.vector_store.delete_index(*args, **kwargs)
         shutil.rmtree(f"{self.location.as_posix()}")
-        return True
 
-    @exception_handler
-    def fetch_entries(self, ids: Union[str, list[str]], **kwargs: Any) -> dict:
-        return self.vector_store.fetch_entries(ids, **kwargs)
-
-    @exception_handler
     def clean(
         self,
-        id_key: str = "id",
-        return_ids: bool = False,
-    ) -> dict:
+        source_id_key: str = "souce",
+    ) -> Dict:
         """
         Delete all the entries in the index and the associates entries in the vector store.
 
@@ -113,22 +88,17 @@ class DocumentDB(EmbeddingRetriever):
         return index(  # type: ignore
             [],
             self.record_manager,
-            self.store,
+            self.vectorstore,
             cleanup="full",
-            source_id_key="source",
-            id_key=id_key,
-            return_ids=return_ids,
+            source_id_key=source_id_key,
         )
 
-    @exception_handler
     def upsert_documents(
         self,
         docs: Union[Document, list[Document]],
         cleanup: str = "incremental",
         source_id_key: str = "source",
-        id_key: str = "my_id",
-        return_ids: bool = True,
-    ) -> dict:
+    ) -> Dict:
         """
         Add or updated documents into the vector store and index
 
@@ -145,14 +115,14 @@ class DocumentDB(EmbeddingRetriever):
             dict: A dictionary with the ids of the entries added, deleted or skipped or the number of entries added,
                   deleted or skipped.
         """
-        if isinstance(docs, Document):
-            docs = [docs]
         return index(  # type: ignore
             docs,
             self.record_manager,
-            self.store,
+            self.vectorstore,
             cleanup=cleanup,  # type: ignore
             source_id_key=source_id_key,
-            id_key=id_key,
-            return_ids=return_ids,
         )
+
+    def delete_documents(self, docs_ids: List[str], source_id_key: str = "source",) -> Dict:
+        docs_to_delete = [Document(page_content="deleted", metadata={source_id_key: doc_id}) for doc_id in docs_ids]
+        return(self.upsert_documents(docs_to_delete, source_id_key=source_id_key))
