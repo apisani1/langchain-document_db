@@ -21,13 +21,7 @@ from langchain_core.stores import (
     ByteStore,
 )
 
-from ..document.chunk import chunk_docs
-from ..exception.exception import (
-    do_retry,
-    exception_handler,
-)
-from ..model import get_chat
-from ..store.faiss_store import FaissStore
+from .load_document import chunk_docs
 
 
 class MultiVectorStore:
