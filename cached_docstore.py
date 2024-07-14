@@ -32,6 +32,30 @@ class NillStore(BaseStore[str, Document]):
 
 
 class CachedDocStore(BaseStore[str, Document]):
+    """
+    A document store that saves documents locally in the file system and caches them in a Redis store.
+
+    Args:
+        root_path (str | Path]): The root path of the file store. All keys are interpreted as paths relative
+            to this root.
+        chmod_file: (int, optional): If specified, sets permissions for newly created files, overriding the
+            current `umask` if needed. Defaults to `None`
+        chmod_dir: (int, optional): If specified, sets permissions for newly created dirs, overriding the
+            current `umask` if needed. Defaults to `None`
+        update_atime: (bool, optional): If `True`, updates the filesystem access time (but not the modified time)
+            when a file is read. This allows MRU/LRU cache policies to be implemented for filesystems where access
+            time updates are disabled. Defaults to `False`
+        redis_client (optional): A Redis connection instance. If not provided, a new connection will be created.
+            Defaults to `None`
+        redis_url (str, optional): redis url to create a new connection if no redis_client is provided. If not provided,
+            it looks for the environmt variable REDIS_URI. if the environment variable is not found it tries to connect
+            to a local using redis://localhost:6379. Defaults to `None`
+        client_kwargs (dic, optional): Keyword arguments to pass to the Redis client
+        ttl (int, optional): time to expire keys in seconds if provided, if None keys will never expire.
+            Defaults to `None`
+        prefix (str, optional): if provided, all keys will be prefixed with this prefix. Defaults to `None`
+
+    """
     def __init__(
         self,
         root_path: Optional[Union[str, Path]] = None,

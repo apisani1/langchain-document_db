@@ -19,6 +19,7 @@ from langchain.docstore.document import Document
 from langchain.indexes import (
     SQLRecordManager,
     index,
+    aindex
 )
 from langchain.schema.vectorstore import VectorStore
 from langchain_core.document_loaders.base import BaseLoader
@@ -35,7 +36,7 @@ class DocumentDB:
     (e.g., via text chunking) with respect to the original source documents.
 
     Args:
-            loacation (Path  str): the directory where the index will be saved
+            location (Path  str): the directory where the index will be saved
             vectorstore (VectorStore): The vectore store to store the embeddings.
             engine (Engine | AsyncEngine, optional): An already existing SQL Alchemy engine. Default is None.
             db_url (str | URL, optional): A database connection string used to create an SQL Alchemy engine.
