@@ -74,28 +74,28 @@ def load_question_chain(llm: BaseLanguageModel) -> Chain:
 class MultiVectorStore(VectorStore):
     """
     Args:
-       vectorstore (VectorStore): VectorStore to use to store generated sub documents.
-       byte_store (ByteStore, optional): ByteStore to store documents. Defaults to None.
-       docstore (BaseStore[str, Document], optional): Docstore to store documents. Defaults to None.
-           If both `byte_store` and `docstore` are provided, `byte_store` will be used.
-           If neither `byte_store` nor `docstore` is provided, an `InMemoryStore` will be used.
-       id_key (str, optional): Key to use to identify parent documents. Defaults to "doc_id".
-       child_id_key (str, optional): Key to use to identify child document ids. Defaults to "child_ids".
-       func (str | Callable, optional): Function to transform a document into sub documents.
-           Defaults to the function selected at the initialization of the class instance.
-       func_kwargs (dict, optional): Keyword arguments to pass to the transformation function.
-           Defaults to "chunk".
-       llm (BaseLanguageModel, optional): Language model to use for the transformation function.
-           Defaults to None. If there is no language model provided, the transformation function may raise an exception.
-       max_retries (int, optional): Maximum number of retries to use when failing to transfomation process.
-           Defaults to 0.
-       add_originals (bool): Whether to add the original documents to the vectorstore.
-           Defaults to False.
-        search_kwargs (dict, optional): Keyword arguments to pass to the retriever.
-        search_type (SearchType): Type of search to perform. Defaults to similarity.
-       kwargs: Additional kwargs to pass to the retriever.
+        vectorstore (VectorStore): VectorStore to use to store generated child documents.
+        byte_store (ByteStore, optional): ByteStore to store the parent documents. Defaults to None.
+        docstore (BaseStore[str, Document], optional): Docstore to store the parent documents. Defaults to None.
+            If both `byte_store` and `docstore` are provided, `byte_store` will be used.
+            If neither `byte_store` nor `docstore` is provided, an `InMemoryStore` will be used.
+        id_key (str, optional): Key to use to identify the parent documents. Defaults to "doc_id".
+        child_id_key (str, optional): Key to use to identify the child document. Defaults to "child_ids".
+        func (str | Callable, optional): Function to transform the parent document into the child documents.
+            Defaults to chunking the parent documents into smaller chunks.
+        func_kwargs (dict, optional): Keyword arguments to pass to the transformation function.
+            Defaults to None.
+        llm (BaseLanguageModel, optional): Language model to use for the transformation function of the parent documents.
+            Defaults to None. If there is no language model provided and the transformation function rquires a LLM, an
+            exception will be raised.
+        max_retries (int, optional): Maximum number of retries to use when failing to transfomation process.
+            Defaults to 0.
+        add_originals (bool): Whether to also add the parant documents to the vectorstore.
+            Defaults to False.
+        search_kwargs (dict, optional): Keyword arguments to pass to the MultiVectorRetriever.
+        search_type (SearchType): Type of search to perform when using the retriever. Defaults to similarity.
+        kwargs: Additional kwargs to pass to the MultiVectorRetriever.
     """
-
     def __init__(
         self,
         vectorstore: VectorStore,
@@ -195,25 +195,23 @@ class MultiVectorStore(VectorStore):
         search_type: SearchType = SearchType.similarity,
         **kwargs: Any,
     ) -> BaseRetriever:
-        """Return a MultiVectorRetriever initialized from this MultiVectorStore.
+        """
+        Return a MultiVectorRetriever initialized from this MultiVectorStore.
 
         Args:
-            search_type (Optional[str]): Defines the type of search that
-                the Retriever should perform.
-                Can be "similarity" (default), "mmr", or
-                "similarity_score_threshold".
-            search_kwargs (Optional[Dict]): Keyword arguments to pass to the
-                search function. Can include things like:
-                    k: Amount of documents to return (Default: 4)
-                    score_threshold: Minimum relevance threshold
-                        for similarity_score_threshold
-                    fetch_k: Amount of documents to pass to MMR algorithm (Default: 20)
-                    lambda_mult: Diversity of results returned by MMR;
-                        1 for minimum diversity and 0 for maximum. (Default: 0.5)
+            search_type (str, optional): Defines the type of search tha the Retriever should perform.
+                Can be "similarity" (default), "mmr", or "similarity_score_threshold".
+            search_kwargs (diict, optional): Keyword arguments to pass to the search function.
+                Can include the following:
+                    k: Amount of documents to return (defaults to 4)
+                    score_threshold: Minimum relevance threshold for similarity_score_threshold
+                    fetch_k: Amount of documents to pass to MMR algorithm (defaults to 20)
+                    lambda_mult: Diversity of results returned by MMR; 1 for minimum diversity and 0 for maximum.
+                        defaults to 0.5.
                     filter: Filter by document metadata
 
         Returns:
-            MultiVectoretriever: A MultiVectorRetriever initialized from this MultiVectorStore.
+            A MultiVectorRetriever initialized from this MultiVectorStore.
         """
         search_kwargs = search_kwargs or {}
         tags = kwargs.pop("tags", None) or []
@@ -237,7 +235,7 @@ class MultiVectorStore(VectorStore):
         metadatas: Optional[List[dict]] = None,
         **kwargs: Any,
     ) -> "MultiVectorStore":
-        """Return a MultiVectorStore initialized from texts and embeddings."""
+        """Return a MultiVectorStore initialized from texts."""
         store = cls(*args, **kwargs)
         store.add_texts(texts, metadatas=metadatas)
         return store
@@ -250,7 +248,7 @@ class MultiVectorStore(VectorStore):
         metadatas: Optional[List[dict]] = None,
         **kwargs: Any,
     ) -> "MultiVectorStore":
-        """Return a MultiVectorStore initialized from texts and embeddings."""
+        """Return a MultiVectorStore initialized from texts."""
         return await run_in_executor(
             None, cls.from_texts, texts, embedding, metadatas, **kwargs
         )
@@ -259,7 +257,7 @@ class MultiVectorStore(VectorStore):
     def from_documents(
         cls, docs: list[Document], *args: Any, **kwargs: Any
     ) -> "MultiVectorStore":
-        """Return a MultiVectorStore initialized from documents and embeddings."""
+        """Return a MultiVectorStore initialized from documents."""
         store = cls(*args, **kwargs)
         store.add_documents(docs)
         return store
@@ -271,7 +269,7 @@ class MultiVectorStore(VectorStore):
         embedding: Embeddings,
         **kwargs: Any,
     ) -> "MultiVectorStore":
-        """Return a MultiVectorStore initialized from documents and embeddings."""
+        """Return a MultiVectorStore initialized from documents."""
         return await run_in_executor(None, cls.from_documents, documents, **kwargs)
 
     def add_texts(
@@ -306,18 +304,19 @@ class MultiVectorStore(VectorStore):
     ) -> int:
         """
         Run more documents through the document transformation function and add the resulting
-        sub documentsto the vectorstore.
+        child documentsto the vectorstore.
 
         Args:
-            documents (Iterable[Document]: Documents to process and generate the sub documents to
-                add to the vectorstore.
-            func (Optional[Union[str, Callable]]): Function to transform a document into sub documents.
+            documents (Iterable[Document]: Parent documents to process and generate child documents to be
+                added to the vectorstore.
+            func (str | Callable, optional): Function to transform a parent document into child documents.
                 Defaults to the function selected at the initialization of the class instance.
-            func_kwargs (Optional[dict]): Keyword arguments to pass to the transformation function.
+            func_kwargs (dict, optional): Keyword arguments to pass to the transformation function.
                 Defaults to the keyword arguments selected at the initialization of the class instance.
-            llm (Optional[BaseLanguageModel]): Language model to use for the transformation function.
-                Defaults to None.
-            max_retries (Optional[int]): Maximum number of retries to use when failing to transfomation process.
+            llm (BaseLanguageModel, optional): Language model to use for the transformation function.
+                Defaults to None. If there is no language model provided and the transformation function rquires a LLM,
+                an exception will be raised.
+            max_retries (int, optional): Maximum number of retries to use when failing to transfomation process.
                 Defaults to the maximum number of retries selected at the initialization of the class instance.
             add_originals (bool): Whether to add the original documents to the vectorstore.
                 Defaults to False.
@@ -325,7 +324,7 @@ class MultiVectorStore(VectorStore):
                 Additional kwargs to pass to the vectorstore.
 
         Returns:
-            List[str]: List of IDs of the proccesed documents.
+            List[str]: List of ids of the parent documents.
         """
         # configure processing function and arguments
         if func:
@@ -366,23 +365,24 @@ class MultiVectorStore(VectorStore):
 
         return docs_ids
 
-    async def add_documents(
+    async def aadd_documents(
         self, documents: List[Document], **kwargs: Any
     ) -> List[str]:
         """
-        Run documents through the document transformation function and add the resulting sub documents
-        to the vectorstore.
+        Run more documents through the document transformation function and add the resulting
+        child documentsto the vectorstore.
 
         Args:
-            documents (Iterable[Document]: Documents to process and generate the sub documents to
-                add to the vectorstore.
-            func (Optional[Union[str, Callable]]): Function to transform a document into sub documents.
+            documents (Iterable[Document]: Parent documents to process and generate child documents to be
+                added to the vectorstore.
+            func (str | Callable, optional): Function to transform a parent document into child documents.
                 Defaults to the function selected at the initialization of the class instance.
-            func_kwargs (Optional[dict]): Keyword arguments to pass to the transformation function.
+            func_kwargs (dict, optional): Keyword arguments to pass to the transformation function.
                 Defaults to the keyword arguments selected at the initialization of the class instance.
-            llm (Optional[BaseLanguageModel]): Language model to use for the transformation function.
-                Defaults to None.
-            max_retries (Optional[int]): Maximum number of retries to use when failing to transfomation process.
+            llm (BaseLanguageModel, optional): Language model to use for the transformation function.
+                Defaults to None. If there is no language model provided and the transformation function rquires a LLM,
+                an exception will be raised.
+            max_retries (int, optional): Maximum number of retries to use when failing to transfomation process.
                 Defaults to the maximum number of retries selected at the initialization of the class instance.
             add_originals (bool): Whether to add the original documents to the vectorstore.
                 Defaults to False.
@@ -390,7 +390,7 @@ class MultiVectorStore(VectorStore):
                 Additional kwargs to pass to the vectorstore.
 
         Returns:
-            List[str]: List of IDs of the proccesed documents.
+            List[str]: List of ids of the parent documents.
         """
         return await run_in_executor(None, self.add_documents, documents, **kwargs)
 
@@ -414,16 +414,17 @@ class MultiVectorStore(VectorStore):
         **kwargs: Any,
     ) -> list[str]:
         """
-        Run documents through the document transformation function and add the resulting sub documents to
+        Run documents through the document transformation function and add the resulting child documents to
         the vectorstore.
 
         Args:
-            documents (Iterable[Document]: Documents to process and generate the sub documents to
-                add to the vectorstore.
-            func_list (List[Union[str, Callable, Tuple[Union[str, Callable], dict]]]): List of functions and kwargs
-                to transform a document into sub documents.
+            documents (Iterable[Document]: Paremt documents to process and generate the child documents to be
+                added to the vectorstore.
+            func_list (list[str | Callable | tuple[str | Callable, dict]]): List of functions and kwargs to transform a
+                parent document into child documents.
             llm (Optional[BaseLanguageModel]): Language model to use for the transformation function.
-                Defaults to None.
+                Defaults to None. If there is no language model provided and a transformation function rquires a LLM,
+                an exception will be raised.
             max_retries (Optional[int]): Maximum number of retries to use when failing to transfomation process.
                 Defaults to the maximum number of retries selected at the initialization of the class instance.
             add_originals (bool): Whether to add the original documents to the vectorstore.
@@ -432,7 +433,7 @@ class MultiVectorStore(VectorStore):
                 Additional kwargs to pass to the vectorstore.
 
         Returns:
-            List[str]: List of IDs of the proccesed documents.
+            List[str]: List of ids of the parent documents.
         """
         doc_ids = [str(uuid.uuid4()) for _ in documents]
         func_list = self._expand_func_list(func_list)
@@ -467,16 +468,17 @@ class MultiVectorStore(VectorStore):
         **kwargs: Any,
     ) -> list[str]:
         """
-        Run documents through the document transformation function and add the resulting sub documents to
+        Run documents through the document transformation function and add the resulting child documents to
         the vectorstore.
 
         Args:
-            documents (Iterable[Document]: Documents to process and generate the sub documents to
-                add to the vectorstore.
-            func_list (List[Union[str, Callable, Tuple[Union[str, Callable], dict]]]): List of functions and kwargs
-                to transform a document into sub documents.
+            documents (Iterable[Document]: Paremt documents to process and generate the child documents to be
+                added to the vectorstore.
+            func_list (list[str | Callable | tuple[str | Callable, dict]]): List of functions and kwargs to transform a
+                parent document into child documents.
             llm (Optional[BaseLanguageModel]): Language model to use for the transformation function.
-                Defaults to None.
+                Defaults to None. If there is no language model provided and a transformation function rquires a LLM,
+                an exception will be raised.
             max_retries (Optional[int]): Maximum number of retries to use when failing to transfomation process.
                 Defaults to the maximum number of retries selected at the initialization of the class instance.
             add_originals (bool): Whether to add the original documents to the vectorstore.
@@ -485,18 +487,19 @@ class MultiVectorStore(VectorStore):
                 Additional kwargs to pass to the vectorstore.
 
         Returns:
-            List[str]: List of IDs of the proccesed documents.
+            List[str]: List of ids of the parent documents.
         """
         return await run_in_executor(
             None, self.add_documents_multiple, documents, **kwargs
         )
 
     def delete(self, ids: Optional[list[str]] = None, **kwargs: Any) -> Optional[bool]:
-        """Delete by vector ID or other criteria.
+        """
+        Delete by vector id or other criteria.
 
         Args:
             ids: List of ids to delete.
-            **kwargs: Other keyword arguments that subclasses might use.
+            kwargs: Other keyword arguments that the vectorstore might use.
 
         Returns:
             Optional[bool]: True if deletion is successful,
@@ -517,11 +520,12 @@ class MultiVectorStore(VectorStore):
     async def adelete(
         self, ids: Optional[List[str]] = None, **kwargs: Any
     ) -> Optional[bool]:
-        """Delete by vector ID or other criteria.
+        """
+        Delete by vector id or other criteria.
 
         Args:
             ids: List of ids to delete.
-            **kwargs: Other keyword arguments that subclasses might use.
+            kwargs: Other keyword arguments that the vectorstore might use.
 
         Returns:
             Optional[bool]: True if deletion is successful,
