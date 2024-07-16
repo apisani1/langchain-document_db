@@ -15,7 +15,7 @@ from langchain.text_splitter import (
 from langchain_community.document_loaders.base import BaseLoader
 
 def chunk_docs(
-    docs: Iterable[Document],
+    documents: Iterable[Document],
     text_splitter: Optional[TextSplitter] = None,
     metadata: Optional[dict] = None,
     **kwargs: Any,
@@ -39,11 +39,11 @@ def chunk_docs(
     """
 
     text_splitter = text_splitter or RecursiveCharacterTextSplitter(**kwargs)
-    _docs = text_splitter.split_documents(docs)
-    if metadata and isinstance(metadata, dict):
-        for _doc in _docs:
-            _doc.metadata.update(metadata)
-    return _docs
+    chunks = text_splitter.split_documents(documents)
+    if metadata:
+        for chunk in chunks:
+            chunk.metadata.update(metadata)
+    return chunks
 
 
 def chunkable(func: Callable) -> Callable:

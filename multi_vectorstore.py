@@ -29,7 +29,8 @@ from langchain_core.stores import (
     ByteStore,
 )
 
-from .load_document import chunk_docs
+from load_document import chunk_docs
+from ids_db import IDsDB
 
 
 def load_question_chain(llm: BaseLanguageModel) -> Chain:
@@ -96,6 +97,7 @@ class MultiVectorStore(VectorStore):
         search_type (SearchType): Type of search to perform when using the retriever. Defaults to similarity.
         kwargs: Additional kwargs to pass to the MultiVectorRetriever.
     """
+
     def __init__(
         self,
         vectorstore: VectorStore,
@@ -103,7 +105,7 @@ class MultiVectorStore(VectorStore):
         docstore: Optional[BaseStore[str, Document]] = None,
         id_key: str = "doc_id",
         child_id_key: str = "child_ids",
-        func: Union[str, Callable] = "chunk",
+        func: Union[str, Callable] = None,
         func_kwargs: Optional[dict] = None,
         llm: Optional[BaseLanguageModel] = None,
         max_retries: int = 0,
@@ -116,9 +118,13 @@ class MultiVectorStore(VectorStore):
         if not byte_store:
             docstore = docstore or InMemoryStore()
         self.docstore = docstore
+        self.ids_db = IDsDB()
         self.id_key = id_key
         self.child_id_key = child_id_key
-        self.func, self.func_kwargs = self.set_func(llm, func, func_kwargs, max_retries)
+        if not func:
+            func = "chunk"
+            func_kwargs = {"chunk_size": 512, "chunk_overlap": 50}
+        self.set_func(func, func_kwargs, llm, max_retries)
         self.retriever = self.as_retriever(
             search_kwargs=search_kwargs, search_type=search_type, **kwargs
         )
@@ -130,16 +136,16 @@ class MultiVectorStore(VectorStore):
         llm: Optional[BaseLanguageModel] = None,
         max_retries: Optional[int] = None,
     ) -> None:
-        self.func, self.func_kwargs = self._get_func(llm, func, func_kwargs)
-        if max_retries:
+        self.func, self.func_kwargs = self._get_func(func, func_kwargs, llm)
+        if max_retries is not None:
             self.max_retries = max_retries
 
     @classmethod
     def _get_func(
         cls,
-        llm: Optional[BaseLanguageModel],
         func: Union[str, Callable],
         func_kwargs: Optional[dict],
+        llm: Optional[BaseLanguageModel],
     ) -> tuple[Callable, dict]:
         func_kwargs = func_kwargs or {}
         if callable(func):
@@ -301,7 +307,7 @@ class MultiVectorStore(VectorStore):
         first_time: bool = True,
         add_originals: bool = False,
         **kwargs: Any,
-    ) -> int:
+    ) -> list[str]:
         """
         Run more documents through the document transformation function and add the resulting
         child documentsto the vectorstore.
@@ -328,7 +334,7 @@ class MultiVectorStore(VectorStore):
         """
         # configure processing function and arguments
         if func:
-            func, func_kwargs = self._get_func(llm, func, func_kwargs)
+            func, func_kwargs = self._get_func(func, func_kwargs, llm)
         else:
             func = self.func
             func_kwargs = self.func_kwargs
@@ -342,28 +348,27 @@ class MultiVectorStore(VectorStore):
         # add cross reference ids between original documents and their childs
         # add the sub documents to the vector store
         for i, doc in enumerate(documents):
+            doc_id = doc_ids[i]
+            doc.metadata[self.id_key] = doc_id
+
             retries = 0
             sub_docs = None
             while not sub_docs and retries <= self.max_retries:
-                sub_docs = func(doc, metadata={self.id_key: doc_ids[i]}, **func_kwargs)
+                sub_docs = func(doc, metadata={self.id_key: doc_id}, **func_kwargs)
                 if sub_docs:
                     child_ids = self.vectorstore.add_documents(sub_docs, **kwargs)
-                    doc.metadata[self.child_id_key] = (
-                        child_ids if isinstance(child_ids, list) else []
-                    )
+                    self.ids_db.add_ids(doc_id, child_ids, "child_ids")
                 retries += 1
 
-        # add original douments to the vector store if required
-        if add_originals:
-            for i, doc in enumerate(documents):
-                doc.metadata[self.id_key] = doc_ids[i]
-            self.vectorstore.add_documents(documents, **kwargs)
+            if add_originals:
+                alias = self.vectorstore.add_documents([doc], **kwargs)
+                self.ids_db.add_ids(doc_id, alias, "aliases")
 
         # add the original documents to the document store for index retrieval
         if first_time:
             self.docstore.mset(list(zip(doc_ids, documents)))
 
-        return docs_ids
+        return doc_ids
 
     async def aadd_documents(
         self, documents: List[Document], **kwargs: Any
@@ -462,7 +467,7 @@ class MultiVectorStore(VectorStore):
             )
         return doc_ids
 
-    async def add_documents_multiple(
+    async def aadd_documents_multiple(
         self,
         documents: list[Document],
         **kwargs: Any,
@@ -493,7 +498,7 @@ class MultiVectorStore(VectorStore):
             None, self.add_documents_multiple, documents, **kwargs
         )
 
-    def delete(self, ids: Optional[list[str]] = None, **kwargs: Any) -> Optional[bool]:
+    def delete(self, ids: Optional[list[str]] = None, **kwargs: Any) -> bool:
         """
         Delete by vector id or other criteria.
 
@@ -502,20 +507,24 @@ class MultiVectorStore(VectorStore):
             kwargs: Other keyword arguments that the vectorstore might use.
 
         Returns:
-            Optional[bool]: True if deletion is successful,
-            False otherwise, None if not implemented.
+            bool: True if deletion is successful. False otherwise
         """
-        documents = self.docstore.mget(ids)
-        total_result = True
-        for doc in documents:
-            result = self.vectorstore.delete(doc.metadata[self.child_id_key], **kwargs)
-            total_result = (
-                total_result and result
-                if total_result is not None and result is not None
-                else None
-            )
-        self.docstore.mdelete(ids)
-        return total_result
+        try:
+            documents = self.docstore.mget(ids)
+            for doc in documents:
+                if doc:
+                    doc_id = doc.metadata[self.id_key]
+                    child_ids = self.ids_db.get_ids(doc_id, "child_ids")
+                    self.vectorstore.delete(child_ids, **kwargs)
+                    self.ids_db.delete_ids(doc_id, "child_ids")
+                    doc_aliases = self.ids_db.get_ids(doc_id, "aliases")
+                    if doc_aliases:
+                        self.vectorstore.delete(doc_aliases, **kwargs)
+                        self.ids_db.delete_ids(doc_id, "aliases")
+            self.docstore.mdelete(ids)
+            return True
+        except Exception as e:
+            return False
 
     async def adelete(
         self, ids: Optional[List[str]] = None, **kwargs: Any
@@ -698,3 +707,23 @@ class MultiVectorStore(VectorStore):
         return await self.vectorstore.amax_marginal_relevance_search_by_vector(
             embedding, k, fetch_k, lambda_mult, **kwargs
         )
+
+    def get_by_ids(self, ids: List[str]) -> List[Document]:
+        """Return documents with the given ids."""
+        return self.docstore.mget(ids)
+
+    def get_child_ids(self, id: str) -> List[Document]:
+        doc = self.docstore.mget([id])[0]
+        if doc:
+            doc_id = doc.metadata[self.id_key]
+            assert doc_id == id
+            return self.ids_db.get_ids(doc_id, "child_ids")
+        return []
+
+    def get_aliases(self, id: str) -> List[str]:
+        doc = self.docstore.mget([id])[0]
+        if doc:
+            doc_id = doc.metadata[self.id_key]
+            assert doc_id == id
+            return self.ids_db.get_ids(doc_id, "aliases")
+        return []
