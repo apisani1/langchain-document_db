@@ -6,17 +6,18 @@ from typing import List
 
 Base = declarative_base()
 
+
 class IDEntry(Base):
-    __tablename__ = 'id_entries'
+    __tablename__ = "id_entries"
 
     key = Column(String, primary_key=True)
     namespace = Column(String, primary_key=True)
     ids = Column(String)
 
+
 class IDsDB:
-    def __init__(self, db_path=''):
-        db_name = 'ids_db.sqlite'
-        db_url = f'sqlite:///{os.path.join(db_path, db_name)}'
+    def __init__(self, db_path: str = "", db_name: str = "ids_db.sqlite"):
+        db_url = f"sqlite:///{os.path.join(db_path, db_name)}"
         self.engine = create_engine(db_url)
         Base.metadata.create_all(self.engine)
         self.Session = sessionmaker(bind=self.engine)
@@ -25,13 +26,17 @@ class IDsDB:
         if ids and isinstance(ids, list):
             session = self.Session()
             try:
-                entry = session.query(IDEntry).filter_by(key=key, namespace=namespace).first()
+                entry = (
+                    session.query(IDEntry)
+                    .filter_by(key=key, namespace=namespace)
+                    .first()
+                )
                 if entry:
-                    existing_ids = entry.ids.split(',') if entry.ids else []
+                    existing_ids = entry.ids.split(",") if entry.ids else []
                     existing_ids.extend(ids)
-                    entry.ids = ','.join(existing_ids)
+                    entry.ids = ",".join(existing_ids)
                 else:
-                    new_entry = IDEntry(key=key, namespace=namespace, ids=','.join(ids))
+                    new_entry = IDEntry(key=key, namespace=namespace, ids=",".join(ids))
                     session.add(new_entry)
                 session.commit()
             finally:
@@ -40,9 +45,11 @@ class IDsDB:
     def get_ids(self, key: str, namespace: str = "") -> List[str]:
         session = self.Session()
         try:
-            entry = session.query(IDEntry).filter_by(key=key, namespace=namespace).first()
+            entry = (
+                session.query(IDEntry).filter_by(key=key, namespace=namespace).first()
+            )
             if entry and entry.ids:
-                return entry.ids.split(',')
+                return entry.ids.split(",")
             return []
         finally:
             session.close()
@@ -50,7 +57,9 @@ class IDsDB:
     def delete_ids(self, key: str, namespace: str = ""):
         session = self.Session()
         try:
-            entry = session.query(IDEntry).filter_by(key=key, namespace=namespace).first()
+            entry = (
+                session.query(IDEntry).filter_by(key=key, namespace=namespace).first()
+            )
             if entry:
                 session.delete(entry)
                 session.commit()
