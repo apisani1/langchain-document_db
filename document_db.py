@@ -71,7 +71,27 @@ class DocumentDB:
             engine_kwargs=engine_kwargs,
             async_mode=async_mode,
         )
-        self.record_manager.create_schema()
+        if not async_mode:
+            self.record_manager.create_schema()
+
+    @classmethod
+    async def ainit(
+        cls,
+        location: Union[Path, str],
+        vectorstore: VectorStore,
+        db_url: Optional[Union[str, URL]] = None,
+        engine_kwargs: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> "DocumentDB":
+        db = DocumentDB(
+            location,
+            vectorstore,
+            db_url=db_url,
+            engine_kwargs=engine_kwargs,
+            async_mode=True,
+        )
+        await db.record_manager.acreate_schema()
+        return db
 
     def as_retriever(self, *args, **kwargs) -> VectorStore:
         return self.vectorstore.as_retriever(*args, **kwargs)
