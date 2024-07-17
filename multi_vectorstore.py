@@ -30,7 +30,7 @@ from langchain_core.stores import (
 )
 
 from load_document import chunk_docs
-from ids_db import IDsDB
+from ids_db_sql import IDsDB
 
 
 def load_question_chain(llm: BaseLanguageModel) -> Chain:
@@ -103,6 +103,7 @@ class MultiVectorStore(VectorStore):
         vectorstore: VectorStore,
         byte_store: Optional[ByteStore] = None,
         docstore: Optional[BaseStore[str, Document]] = None,
+        ids_db_path: str = "",
         id_key: str = "doc_id",
         child_id_key: str = "child_ids",
         func: Union[str, Callable] = None,
@@ -118,7 +119,7 @@ class MultiVectorStore(VectorStore):
         if not byte_store:
             docstore = docstore or InMemoryStore()
         self.docstore = docstore
-        self.ids_db = IDsDB()
+        self.ids_db = IDsDB(ids_db_path)
         self.id_key = id_key
         self.child_id_key = child_id_key
         if not func:
