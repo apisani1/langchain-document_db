@@ -115,7 +115,7 @@ def load_document(file_path: str, *args: Any, **kwargs: Any) -> list[Document]:
     _, extension = os.path.splitext(file_path)
     match extension:
         case ".txt":
-            from langchain.document_loaders.text import TextLoader
+            from langchain_community.document_loaders.text import TextLoader
 
             loader = TextLoader(file_path, *args, **kwargs)
         case ".pdf":

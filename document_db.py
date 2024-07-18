@@ -104,7 +104,7 @@ class DocumentDB:
 
     def clean(
         self,
-        source_id_key: str = "souce",
+        source_id_key: str = "source",
     ) -> Dict:
         """
         Delete all the entries in the index and the associates entries in the vector store.
@@ -173,7 +173,7 @@ class DocumentDB:
 
     async def aclean(
         self,
-        source_id_key: str = "souce",
+        source_id_key: str = "source",
     ) -> Dict:
         """
         Delete all the entries in the index and the associates entries in the vector store.

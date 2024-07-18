@@ -1,5 +1,6 @@
 import os
 import tempfile
+import uuid
 from datetime import datetime
 from typing import (
     Any,
@@ -20,15 +21,6 @@ import pytest
 import pytest_asyncio
 
 from document_db import DocumentDB
-from langchain.indexes import (
-    SQLRecordManager,
-    aindex,
-    index,
-)
-from langchain.indexes._api import (
-    _abatch,
-    _HashedDocument,
-)
 from langchain_core.document_loaders import BaseLoader
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
@@ -91,7 +83,7 @@ class InMemoryVectorStore(VectorStore):
             )
 
         if not ids:
-            raise NotImplementedError("This is not implemented yet.")
+            ids= [str(uuid.uuid4()) for _ in documents]
 
         for _id, document in zip(ids, documents):
             if _id in self.store and not self.permit_upserts:
@@ -590,6 +582,7 @@ def test_deduplication_v2(document_db: DocumentDB) -> None:
     )
     assert contents == ["1", "2", "3"]
 
+
 @pytest.mark.requires("aiosqlite")
 @pytest.mark.asyncio
 async def test_adeduplication_v2(adocument_db: DocumentDB) -> None:
@@ -626,6 +619,143 @@ async def test_adeduplication_v2(adocument_db: DocumentDB) -> None:
         [document.page_content for document in adocument_db.vectorstore.store.values()]
     )
     assert contents == ["1", "2", "3"]
+
+
+def test_delete(document_db: DocumentDB) -> None:
+    """Test that the delete method functions as expected."""
+    docs = [
+        Document(
+            page_content="1",
+            metadata={"source": "1"},
+        ),
+        Document(
+            page_content="2",
+            metadata={"source": "1"},
+        ),
+        Document(
+            page_content="3",
+            metadata={"source": "2"},
+        ),
+    ]
+    assert document_db.upsert_documents(docs) == {
+        "num_added": len(docs),
+        "num_deleted": 0,
+        "num_skipped": 0,
+        "num_updated": 0,
+    }
+    to_delete = list(set(doc.metadata["source"] for doc in docs))
+    assert document_db.delete_documents(to_delete) == {
+        "num_added": len(to_delete),
+        "num_deleted": len(docs),
+        "num_skipped": 0,
+        "num_updated": 0,
+    }
+    contents = sorted(
+        [document.page_content for document in document_db.vectorstore.store.values()]
+    )
+    assert contents == ["Deleted DO NOT USE", "Deleted DO NOT USE"]
+
+
+@pytest.mark.requires("aiosqlite")
+@pytest.mark.asyncio
+async def test_adelete(adocument_db: DocumentDB) -> None:
+    """Test that the delete method functions as expected."""
+    docs = [
+        Document(
+            page_content="1",
+            metadata={"source": "1"},
+        ),
+        Document(
+            page_content="2",
+            metadata={"source": "1"},
+        ),
+        Document(
+            page_content="3",
+            metadata={"source": "2"},
+        ),
+    ]
+    assert await adocument_db.aupsert_documents(docs) == {
+        "num_added": len(docs),
+        "num_deleted": 0,
+        "num_skipped": 0,
+        "num_updated": 0,
+    }
+    to_delete = list(set(doc.metadata["source"] for doc in docs))
+    assert await adocument_db.adelete_documents(to_delete) == {
+        "num_added": len(to_delete),
+        "num_deleted": len(docs),
+        "num_skipped": 0,
+        "num_updated": 0,
+    }
+    contents = sorted(
+        [document.page_content for document in adocument_db.vectorstore.store.values()]
+    )
+    assert contents == ["Deleted DO NOT USE", "Deleted DO NOT USE"]
+
+
+def test_delete_nonexistingkey(document_db: DocumentDB) -> None:
+    """Test that the delete method functions as expected."""
+    docs = [
+        Document(
+            page_content="1",
+            metadata={"source": "1"},
+        ),
+        Document(
+            page_content="2",
+            metadata={"source": "1"},
+        ),
+        Document(
+            page_content="3",
+            metadata={"source": "2"},
+        ),
+    ]
+    assert document_db.upsert_documents(docs) == {
+        "num_added": 3,
+        "num_deleted": 0,
+        "num_skipped": 0,
+        "num_updated": 0,
+    }
+    to_delete = ["nonexistingkey1", "nonexistingkey2"]
+    assert document_db.delete_documents(to_delete) == {
+        "num_added": len(to_delete),
+        "num_deleted": 0,
+        "num_skipped": 0,
+        "num_updated": 0,
+    }
+
+
+@pytest.mark.requires("aiosqlite")
+@pytest.mark.asyncio
+async def test_adelete_nonexistingkey(adocument_db: DocumentDB) -> None:
+    """Test that the delete method functions as expected."""
+    docs = [
+        Document(
+            page_content="1",
+            metadata={"source": "1"},
+        ),
+        Document(
+            page_content="2",
+            metadata={"source": "1"},
+        ),
+        Document(
+            page_content="3",
+            metadata={"source": "2"},
+        ),
+    ]
+    assert await adocument_db.aupsert_documents(docs) == {
+        "num_added": 3,
+        "num_deleted": 0,
+        "num_skipped": 0,
+        "num_updated": 0,
+    }
+    to_delete = ["nonexistingkey1", "nonexistingkey2"]
+    assert await adocument_db.adelete_documents(to_delete) == {
+        "num_added": len(to_delete),
+        "num_deleted": 0,
+        "num_skipped": 0,
+        "num_updated": 0,
+    }
+
 
 def test_clean(document_db: DocumentDB) -> None:
     """Test that the clean method functions as expected."""
@@ -664,6 +794,7 @@ def test_clean(document_db: DocumentDB) -> None:
         [document.page_content for document in document_db.vectorstore.store.values()]
     )
     assert contents == []
+
 
 @pytest.mark.requires("aiosqlite")
 @pytest.mark.asyncio

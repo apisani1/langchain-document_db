@@ -71,6 +71,25 @@ def load_question_chain(llm: BaseLanguageModel) -> Chain:
     )
     return chain
 
+def _chunk(doc: Document, metadata: dict, **kwargs: Any) -> Document:
+    return chunk_docs([doc], metadata=metadata, **kwargs)
+
+def _sumarize(doc: Document, metadata: dict, chain: Chain) -> Document:
+    return [
+        Document(page_content=chain.invoke([doc])["output_text"], metadata=metadata)
+    ]
+
+def _generate_questions(
+    doc: Document, metadata: dict, chain: Chain, q: int = 5
+) -> list[Document]:
+    questions = chain.invoke({"doc": doc, "q": q})
+    return [
+        Document(page_content=question, metadata=metadata)
+        for question in questions
+        if question is not None
+    ]
+
+
 
 class MultiVectorStore(VectorStore):
     """
@@ -82,7 +101,7 @@ class MultiVectorStore(VectorStore):
             If neither `byte_store` nor `docstore` is provided, an `InMemoryStore` will be used.
         id_key (str, optional): Key to use to identify the parent documents. Defaults to "doc_id".
         child_id_key (str, optional): Key to use to identify the child document. Defaults to "child_ids".
-        func (str | Callable, optional): Function to transform the parent document into the child documents.
+        functor (str | Callable, optional): Function to transform the parent document into the child documents.
             Defaults to chunking the parent documents into smaller chunks.
         func_kwargs (dict, optional): Keyword arguments to pass to the transformation function.
             Defaults to None.
@@ -106,7 +125,7 @@ class MultiVectorStore(VectorStore):
         ids_db_path: str = "",
         id_key: str = "doc_id",
         child_id_key: str = "child_ids",
-        func: Union[str, Callable] = None,
+        functor: Union[str, Callable] = None,
         func_kwargs: Optional[dict] = None,
         llm: Optional[BaseLanguageModel] = None,
         max_retries: int = 0,
@@ -122,75 +141,54 @@ class MultiVectorStore(VectorStore):
         self.ids_db = IDsDB(ids_db_path)
         self.id_key = id_key
         self.child_id_key = child_id_key
-        if not func:
-            func = "chunk"
+        if not functor:
+            functor = "chunk"
             func_kwargs = {"chunk_size": 512, "chunk_overlap": 50}
-        self.set_func(func, func_kwargs, llm, max_retries)
+        self.set_func(functor, func_kwargs, llm, max_retries)
         self.retriever = self.as_retriever(
             search_kwargs=search_kwargs, search_type=search_type, **kwargs
         )
 
     def set_func(
         self,
-        func: Union[str, Callable],
+        functor: Union[str, Callable],
         func_kwargs: Optional[dict] = None,
         llm: Optional[BaseLanguageModel] = None,
         max_retries: Optional[int] = None,
     ) -> None:
-        self.func, self.func_kwargs = self._get_func(func, func_kwargs, llm)
+        self.functor, self.func_kwargs = self._get_func(functor, func_kwargs, llm)
         if max_retries is not None:
             self.max_retries = max_retries
 
     @classmethod
     def _get_func(
         cls,
-        func: Union[str, Callable],
+        functor: Union[str, Callable],
         func_kwargs: Optional[dict],
-        llm: Optional[BaseLanguageModel],
+        llm: Optional[BaseLanguageModel]=None,
     ) -> tuple[Callable, dict]:
         func_kwargs = func_kwargs or {}
-        if callable(func):
-            return func, func_kwargs
-        if isinstance(func, str):
-            match func:
+        if callable(functor):
+            return functor, func_kwargs
+        if isinstance(functor, str):
+            match functor:
                 case "chunk":
-                    return cls._chunk, func_kwargs
+                    return _chunk, func_kwargs
                 case "summary":
                     if not llm:
                         raise ValueError("llm must be provided for summary")
                     chain = load_summarize_chain(llm)
                     func_kwargs.update({"chain": chain})
-                    return cls._sumarize, func_kwargs
+                    return _sumarize, func_kwargs
                 case "question":
                     if not llm:
                         raise ValueError("llm must be provided for question")
                     chain = load_question_chain(llm)
                     func_kwargs.update({"chain": chain})
-                    return cls._generate_questions, func_kwargs
+                    return _generate_questions, func_kwargs
                 case _:
                     pass
         raise ValueError("Bad functor for MultiVectorStore")
-
-    @staticmethod
-    def _chunk(doc: Document, metadata: dict, **kwargs: Any) -> Document:
-        return chunk_docs([doc], metadata=metadata, **kwargs)
-
-    @staticmethod
-    def _sumarize(doc: Document, metadata: dict, chain: Chain) -> Document:
-        return [
-            Document(page_content=chain.invoke([doc])["output_text"], metadata=metadata)
-        ]
-
-    @staticmethod
-    def _generate_questions(
-        doc: Document, metadata: dict, chain: Chain, q: int = 5
-    ) -> list[Document]:
-        questions = chain.invoke({"doc": doc, "q": q})
-        return [
-            Document(page_content=question, metadata=metadata)
-            for question in questions
-            if question is not None
-        ]
 
     @property
     def embeddings(self) -> Embeddings:
@@ -301,7 +299,7 @@ class MultiVectorStore(VectorStore):
         self,
         documents: Iterable[Document],
         docs_ids: Optional[list[str]] = None,
-        func: Union[str, Callable] = None,
+        functor: Union[str, Callable] = None,
         func_kwargs: Optional[dict] = None,
         llm: Optional[BaseLanguageModel] = None,
         max_retries: Optional[int] = None,
@@ -316,7 +314,7 @@ class MultiVectorStore(VectorStore):
         Args:
             documents (Iterable[Document]: Parent documents to process and generate child documents to be
                 added to the vectorstore.
-            func (str | Callable, optional): Function to transform a parent document into child documents.
+            functor (str | Callable, optional): Function to transform a parent document into child documents.
                 Defaults to the function selected at the initialization of the class instance.
             func_kwargs (dict, optional): Keyword arguments to pass to the transformation function.
                 Defaults to the keyword arguments selected at the initialization of the class instance.
@@ -334,10 +332,10 @@ class MultiVectorStore(VectorStore):
             List[str]: List of ids of the parent documents.
         """
         # configure processing function and arguments
-        if func:
-            func, func_kwargs = self._get_func(func, func_kwargs, llm)
+        if functor:
+            functor, func_kwargs = self._get_func(functor, func_kwargs, llm)
         else:
-            func = self.func
+            functor = self.functor
             func_kwargs = self.func_kwargs
         max_retries = max_retries or self.max_retries
 
@@ -355,7 +353,7 @@ class MultiVectorStore(VectorStore):
             retries = 0
             sub_docs = None
             while not sub_docs and retries <= self.max_retries:
-                sub_docs = func(doc, metadata={self.id_key: doc_id}, **func_kwargs)
+                sub_docs = functor(doc, metadata={self.id_key: doc_id}, **func_kwargs)
                 if sub_docs:
                     child_ids = self.vectorstore.add_documents(sub_docs, **kwargs)
                     self.ids_db.add_ids(doc_id, child_ids, "child_ids")
@@ -381,7 +379,7 @@ class MultiVectorStore(VectorStore):
         Args:
             documents (Iterable[Document]: Parent documents to process and generate child documents to be
                 added to the vectorstore.
-            func (str | Callable, optional): Function to transform a parent document into child documents.
+            functor (str | Callable, optional): Function to transform a parent document into child documents.
                 Defaults to the function selected at the initialization of the class instance.
             func_kwargs (dict, optional): Keyword arguments to pass to the transformation function.
                 Defaults to the keyword arguments selected at the initialization of the class instance.
@@ -407,7 +405,7 @@ class MultiVectorStore(VectorStore):
             return []
         func = func_list[0]
         if isinstance(func, tuple):
-            return [func]
+            return [func] + self._expand_func_list(func_list[1:])
         return [(func, {})] + self._expand_func_list(func_list[1:])
 
     def add_documents_multiple(
@@ -446,7 +444,7 @@ class MultiVectorStore(VectorStore):
         self.add_documents(
             documents,
             doc_ids=doc_ids,
-            func=func_list[0][0],
+            functor=func_list[0][0],
             func_kwargs=func_list[0][1],
             first_time=True,
             add_originals=add_originals,
@@ -458,7 +456,7 @@ class MultiVectorStore(VectorStore):
             self.add_documents(
                 documents,
                 doc_ids=doc_ids,
-                func=f,
+                functor=f,
                 func_kwargs=fk,
                 first_time=False,
                 add_originals=False,
