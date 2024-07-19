@@ -9,20 +9,22 @@ load_dotenv(find_dotenv(), override=True)
 import os
 import tempfile
 from typing import (
-    Any,
-    AsyncGenerator,
     Generator,
     List,
 )
 
 import pytest
-import pytest_asyncio
+from scipy.spatial import distance
 
-from langchain.cache import InMemoryCache
 from langchain.globals import set_llm_cache
 from langchain.storage import InMemoryStore
+from langchain_community.cache import InMemoryCache
+from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
-from langchain_openai import ChatOpenAI
+from langchain_openai import (
+    ChatOpenAI,
+    OpenAIEmbeddings,
+)
 from load_document import load_document
 from multi_vectorstore import (
     MultiVectorStore,
@@ -34,8 +36,10 @@ from multi_vectorstore import (
 )
 from test_document_db import InMemoryVectorStore
 
+
 set_llm_cache(InMemoryCache())
 llm = ChatOpenAI()
+embeddings = OpenAIEmbeddings()
 
 large_chuk_size = 4000
 docs = load_document(
@@ -81,14 +85,15 @@ def total_len(docs: List[Document]) -> int:
     return sum([len(doc.page_content) for doc in docs])
 
 
-class InMemoryVectorstoreWithSearch(InMemoryVectorStore):
-    def similarity_search(
-        self, query: str, k: int = 4, **kwargs: Any
-    ) -> List[Document]:
-        res = self.store.get(query)
-        if res is None:
-            return []
-        return [res]
+query = "what is the state of the union?"
+embedded_query = embeddings.embed_query(query)
+embedded_sub_docs = [embeddings.embed_query(doc.page_content) for doc in sub_docs_chuck]
+sub_docs_distances = [
+    distance.euclidean(embedded_query, embedded_sub_doc)
+    for embedded_sub_doc in embedded_sub_docs
+]
+sub_docs_distances.sort()
+print(sub_docs_distances)
 
 
 @pytest.fixture
@@ -98,7 +103,7 @@ def multi_vectorstore() -> Generator[MultiVectorStore, None, None]:
     temp_dir = tempfile.mkdtemp()
 
     multi_vectorstore = MultiVectorStore(
-        vectorstore=InMemoryVectorstoreWithSearch(),
+        vectorstore=InMemoryVectorStore(),
         docstore=InMemoryStore(),
         ids_db_path=temp_dir,
     )
@@ -108,14 +113,14 @@ def multi_vectorstore() -> Generator[MultiVectorStore, None, None]:
     os.rmdir(temp_dir)
 
 
-@pytest_asyncio.fixture
-async def amulti_vectorstore() -> AsyncGenerator[MultiVectorStore, None]:
+@pytest.fixture
+def multi_vectorstore_with_search() -> Generator[MultiVectorStore, None, None]:
     """MultiVectorStore fixture."""
     # Create a temporary directory for the test database
     temp_dir = tempfile.mkdtemp()
 
     multi_vectorstore = MultiVectorStore(
-        vectorstore=InMemoryVectorstoreWithSearch(),
+        vectorstore=Chroma(embedding_function=embeddings),
         docstore=InMemoryStore(),
         ids_db_path=temp_dir,
     )
@@ -214,7 +219,9 @@ def test_add_documents_question(multi_vectorstore: MultiVectorStore) -> None:
 @pytest.mark.asyncio
 async def test_aadd_documents_question(multi_vectorstore: MultiVectorStore) -> None:
     """Test adding documents to the vectorstore."""
-    ids = await multi_vectorstore.aadd_documents(docs, functor="question", func_kwargs={"q": 2}, llm=llm)
+    ids = await multi_vectorstore.aadd_documents(
+        docs, functor="question", func_kwargs={"q": 2}, llm=llm
+    )
 
     assert len(ids) == len(docs)
     assert len(multi_vectorstore.docstore.store) == len(docs)
@@ -225,3 +232,108 @@ async def test_aadd_documents_question(multi_vectorstore: MultiVectorStore) -> N
     assert total_len(multi_vectorstore.vectorstore.store.values()) == total_len(
         sub_docs_question
     )
+
+
+# Test for add_documents_multiple
+def test_add_documents_multiple(multi_vectorstore: MultiVectorStore) -> None:
+    func_list = [
+        ("chunk", {"chunk_size": small_chunk_size}),
+        "summary",
+        ("question", {"q": 2}),
+    ]
+    ids = multi_vectorstore.add_documents_multiple(docs, func_list=func_list, llm=llm)
+
+    assert len(ids) == len(docs)
+    assert len(multi_vectorstore.docstore.store) == len(docs)
+    total_subdocs = (
+        len(sub_docs_chuck) + len(sub_docs_summarize) + len(sub_docs_question)
+    )
+    assert len(multi_vectorstore.vectorstore.store) == total_subdocs
+
+
+# Test for aadd_documents_multiple
+@pytest.mark.requires("aiosqlite")
+@pytest.mark.asyncio
+async def test_aadd_documents_multiple(multi_vectorstore: MultiVectorStore) -> None:
+    func_list = [
+        ("chunk", {"chunk_size": small_chunk_size}),
+        "summary",
+        ("question", {"q": 2}),
+    ]
+    ids = await multi_vectorstore.aadd_documents_multiple(
+        docs, func_list=func_list, llm=llm
+    )
+
+    assert len(ids) == len(docs)
+    assert len(multi_vectorstore.docstore.store) == len(docs)
+    total_subdocs = (
+        len(sub_docs_chuck) + len(sub_docs_summarize) + len(sub_docs_question)
+    )
+    assert len(multi_vectorstore.vectorstore.store) == total_subdocs
+
+
+# Test for delete method
+def test_delete(multi_vectorstore: MultiVectorStore) -> None:
+    ids = multi_vectorstore.add_documents(docs)
+    assert len(multi_vectorstore.docstore.store) == len(docs)
+
+    # Delete half of the documents
+    to_delete = ids[: len(ids) // 2]
+    multi_vectorstore.delete(to_delete)
+
+    assert len(multi_vectorstore.docstore.store) == len(docs) - len(to_delete)
+
+
+# Test for adelete method
+@pytest.mark.requires("aiosqlite")
+@pytest.mark.asyncio
+async def test_adelete(multi_vectorstore: MultiVectorStore) -> None:
+    ids = await multi_vectorstore.aadd_documents(docs)
+    assert len(multi_vectorstore.docstore.store) == len(docs)
+
+    # Delete half of the documents
+    to_delete = ids[: len(ids) // 2]
+    await multi_vectorstore.adelete(to_delete)
+
+    assert len(multi_vectorstore.docstore.store) == len(docs) - len(to_delete)
+
+
+# Test for similarity_search method
+def test_similarity_search(multi_vectorstore_with_search: MultiVectorStore) -> None:
+    multi_vectorstore_with_search.add_documents(
+        docs, functor="chunk", func_kwargs={"chunk_size": small_chunk_size}
+    )
+    results = multi_vectorstore_with_search.similarity_search(query, k=2)
+
+    assert len(results) <= 2
+    assert len(results) > 0
+    for doc in results:
+        dist = distance.euclidean(
+            embeddings.embed_query(doc.page_content), embedded_query
+        )
+        assert dist == pytest.approx(
+            sub_docs_distances[0], abs=1e-5
+        ) or dist == pytest.approx(sub_docs_distances[1], abs=1e-5)
+
+
+# Test for aasimilarity_search method
+@pytest.mark.requires("aiosqlite")
+@pytest.mark.asyncio
+async def test_asimilarity_search(
+    multi_vectorstore_with_search: MultiVectorStore,
+) -> None:
+    await multi_vectorstore_with_search.aadd_documents(
+        docs, functor="chunk", func_kwargs={"chunk_size": small_chunk_size}
+    )
+    results = await multi_vectorstore_with_search.asimilarity_search(query, k=2)
+
+    assert len(results) <= 2
+    assert len(results) > 0
+    for doc in results:
+        dist = distance.euclidean(
+            embeddings.embed_query(doc.page_content), embedded_query
+        )
+        print(doc)
+        assert dist == pytest.approx(
+            sub_docs_distances[0], abs=1e-5
+        ) or dist == pytest.approx(sub_docs_distances[1], abs=1e-5)
