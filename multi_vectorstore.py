@@ -145,8 +145,10 @@ class MultiVectorStore(VectorStore):
             functor = "chunk"
             func_kwargs = {"chunk_size": 512, "chunk_overlap": 50}
         self.set_func(functor, func_kwargs, llm, max_retries)
+        self.search_kwargs = search_kwargs or {}
+        self.search_type = search_type
         self.retriever = self.as_retriever(
-            search_kwargs=search_kwargs, search_type=search_type, **kwargs
+            search_kwargs=self.search_kwargs, search_type=self.search_type, **kwargs
         )
 
     def set_func(
@@ -197,7 +199,7 @@ class MultiVectorStore(VectorStore):
     def as_retriever(
         self,
         search_kwargs: Optional[dict] = None,
-        search_type: SearchType = SearchType.similarity,
+        search_type: Optional[SearchType] = None,
         **kwargs: Any,
     ) -> BaseRetriever:
         """
@@ -218,7 +220,8 @@ class MultiVectorStore(VectorStore):
         Returns:
             A MultiVectorRetriever initialized from this MultiVectorStore.
         """
-        search_kwargs = search_kwargs or {}
+        search_kwargs = search_kwargs or self.search_kwargs
+        search_type = search_type or self.search_type
         tags = kwargs.pop("tags", None) or []
         tags.extend(self.vectorstore._get_retriever_tags())
         return MultiVectorRetriever(
@@ -298,7 +301,7 @@ class MultiVectorStore(VectorStore):
     def add_documents(
         self,
         documents: Iterable[Document],
-        docs_ids: Optional[list[str]] = None,
+        ids: Optional[list[str]] = None,
         functor: Union[str, Callable] = None,
         func_kwargs: Optional[dict] = None,
         llm: Optional[BaseLanguageModel] = None,
@@ -340,14 +343,14 @@ class MultiVectorStore(VectorStore):
         max_retries = max_retries or self.max_retries
 
         # generate ids for the original documents
-        if not docs_ids:
-            doc_ids = [str(uuid.uuid4()) for _ in documents]
+        if not ids:
+            ids = [str(uuid.uuid4()) for _ in documents]
 
         # generate sub document using the processing function and
         # add cross reference ids between original documents and their childs
         # add the sub documents to the vector store
         for i, doc in enumerate(documents):
-            doc_id = doc_ids[i]
+            doc_id = ids[i]
             doc.metadata[self.id_key] = doc_id
 
             retries = 0
@@ -360,14 +363,14 @@ class MultiVectorStore(VectorStore):
                 retries += 1
 
             if add_originals:
-                alias = self.vectorstore.add_documents([doc], **kwargs)
+                alias = self.vectorstore.add_documents([doc], ids=[doc_id], **kwargs)
                 self.ids_db.add_ids(doc_id, alias, "aliases")
 
         # add the original documents to the document store for index retrieval
         if first_time:
-            self.docstore.mset(list(zip(doc_ids, documents)))
+            self.docstore.mset(list(zip(ids, documents)))
 
-        return doc_ids
+        return ids
 
     async def aadd_documents(
         self, documents: List[Document], **kwargs: Any
@@ -412,6 +415,7 @@ class MultiVectorStore(VectorStore):
         self,
         documents: Iterable[Document],
         func_list: List[Union[str, Callable, Tuple[Union[str, Callable], dict]]],
+        ids: Optional[list[str]] = None,
         add_originals: bool = False,
         llm: Optional[BaseLanguageModel] = None,
         max_retries: Optional[int] = None,
@@ -439,11 +443,12 @@ class MultiVectorStore(VectorStore):
         Returns:
             List[str]: List of ids of the parent documents.
         """
-        doc_ids = [str(uuid.uuid4()) for _ in documents]
+        if not ids:
+            ids = [str(uuid.uuid4()) for _ in documents]
         func_list = self._expand_func_list(func_list)
         self.add_documents(
             documents,
-            doc_ids=doc_ids,
+            ids=ids,
             functor=func_list[0][0],
             func_kwargs=func_list[0][1],
             first_time=True,
@@ -455,7 +460,7 @@ class MultiVectorStore(VectorStore):
         for f, fk in func_list[1:]:
             self.add_documents(
                 documents,
-                doc_ids=doc_ids,
+                ids=ids,
                 functor=f,
                 func_kwargs=fk,
                 first_time=False,
@@ -464,7 +469,7 @@ class MultiVectorStore(VectorStore):
                 max_retries=max_retries,
                 **kwargs,
             )
-        return doc_ids
+        return ids
 
     async def aadd_documents_multiple(
         self,
