@@ -33,7 +33,7 @@ class NillStore(BaseStore[str, Document]):
 
 class CachedDocStore(BaseStore[str, Document]):
     """
-    A document store that saves documents locally in the file system and caches them in a Redis store.
+    A document store that saves documents locally in the file system and caches them in a Redis server.
 
     Args:
         root_path (str | Path]): The root path of the file store. All keys are interpreted as paths relative
@@ -53,7 +53,7 @@ class CachedDocStore(BaseStore[str, Document]):
         client_kwargs (dic, optional): Keyword arguments to pass to the Redis client
         ttl (int, optional): time to expire keys in seconds if provided, if None keys will never expire.
             Defaults to `None`
-        prefix (str, optional): if provided, all keys will be prefixed with this prefix. Defaults to `None`
+        prefix (str, optional): if provided, all keys will be prefixed with this prefix. Defaults to None.
 
     """
     def __init__(

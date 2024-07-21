@@ -167,7 +167,6 @@ async def adocument_db() -> AsyncGenerator[DocumentDB, None]:
         location=temp_dir,
         vectorstore=InMemoryVectorStore(),
         db_url="sqlite+aiosqlite:///:memory:",
-        async_mode=True,
     )
     yield document_db
     # Cleanup after tests

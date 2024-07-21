@@ -71,13 +71,16 @@ def load_question_chain(llm: BaseLanguageModel) -> Chain:
     )
     return chain
 
+
 def _chunk(doc: Document, metadata: dict, **kwargs: Any) -> Document:
     return chunk_docs([doc], metadata=metadata, **kwargs)
+
 
 def _sumarize(doc: Document, metadata: dict, chain: Chain) -> Document:
     return [
         Document(page_content=chain.invoke([doc])["output_text"], metadata=metadata)
     ]
+
 
 def _generate_questions(
     doc: Document, metadata: dict, chain: Chain, q: int = 5
@@ -88,7 +91,6 @@ def _generate_questions(
         for question in questions
         if question is not None
     ]
-
 
 
 class MultiVectorStore(VectorStore):
@@ -104,13 +106,13 @@ class MultiVectorStore(VectorStore):
         functor (str | Callable, optional): Function to transform the parent document into the child documents.
             Defaults to chunking the parent documents into smaller chunks.
         func_kwargs (dict, optional): Keyword arguments to pass to the transformation function.
-            Defaults to None.
+            Defaults to {"chunk_size": 500, "chunk_overlap": 50}.
         llm (BaseLanguageModel, optional): Language model to use for the transformation function of the parent documents.
             Defaults to None. If there is no language model provided and the transformation function rquires a LLM, an
             exception will be raised.
-        max_retries (int, optional): Maximum number of retries to use when failing to transfomation process.
+        max_retries (int, optional): Maximum number of retries to use when failing to transform douments.
             Defaults to 0.
-        add_originals (bool): Whether to also add the parant documents to the vectorstore.
+        add_originals (bool): Whether to also add the parent documents to the vectorstore.
             Defaults to False.
         search_kwargs (dict, optional): Keyword arguments to pass to the MultiVectorRetriever.
         search_type (SearchType): Type of search to perform when using the retriever. Defaults to similarity.
@@ -143,7 +145,7 @@ class MultiVectorStore(VectorStore):
         self.child_id_key = child_id_key
         if not functor:
             functor = "chunk"
-            func_kwargs = {"chunk_size": 512, "chunk_overlap": 50}
+            func_kwargs = {"chunk_size": 500, "chunk_overlap": 50}
         self.set_func(functor, func_kwargs, llm, max_retries)
         self.search_kwargs = search_kwargs or {}
         self.search_type = search_type
@@ -167,7 +169,7 @@ class MultiVectorStore(VectorStore):
         cls,
         functor: Union[str, Callable],
         func_kwargs: Optional[dict],
-        llm: Optional[BaseLanguageModel]=None,
+        llm: Optional[BaseLanguageModel] = None,
     ) -> tuple[Callable, dict]:
         func_kwargs = func_kwargs or {}
         if callable(functor):
@@ -208,7 +210,7 @@ class MultiVectorStore(VectorStore):
         Args:
             search_type (str, optional): Defines the type of search tha the Retriever should perform.
                 Can be "similarity" (default), "mmr", or "similarity_score_threshold".
-            search_kwargs (diict, optional): Keyword arguments to pass to the search function.
+            search_kwargs (dict, optional): Keyword arguments to pass to the search function.
                 Can include the following:
                     k: Amount of documents to return (defaults to 4)
                     score_threshold: Minimum relevance threshold for similarity_score_threshold
@@ -346,9 +348,9 @@ class MultiVectorStore(VectorStore):
         if not ids:
             ids = [str(uuid.uuid4()) for _ in documents]
 
-        # generate sub document using the processing function and
-        # add cross reference ids between original documents and their childs
-        # add the sub documents to the vector store
+        # generate chikd document using the processing function and
+        # add cross reference ids between the parent documents and their childs
+        # add the child documents to the vector store
         for i, doc in enumerate(documents):
             doc_id = ids[i]
             doc.metadata[self.id_key] = doc_id
@@ -422,7 +424,7 @@ class MultiVectorStore(VectorStore):
         **kwargs: Any,
     ) -> list[str]:
         """
-        Run documents through the document transformation function and add the resulting child documents to
+        Run documents through the document transformation functions and add the resulting child documents to
         the vectorstore.
 
         Args:
@@ -507,11 +509,11 @@ class MultiVectorStore(VectorStore):
         Delete by vector id or other criteria.
 
         Args:
-            ids: List of ids to delete.
-            kwargs: Other keyword arguments that the vectorstore might use.
+            ids: List of ids of documents to delete.
+            kwargs: Other keyword arguments that the vectorstore might use to delete documents.
 
         Returns:
-            bool: True if deletion is successful. False otherwise
+            bool: True if deletion is successful. False otherwise.
         """
         try:
             documents = self.docstore.mget(ids)
@@ -541,8 +543,7 @@ class MultiVectorStore(VectorStore):
             kwargs: Other keyword arguments that the vectorstore might use.
 
         Returns:
-            Optional[bool]: True if deletion is successful,
-            False otherwise, None if not implemented.
+            Optional[bool]: True if deletion is successful. False otherwise.
         """
         return await run_in_executor(None, self.delete, ids, **kwargs)
 

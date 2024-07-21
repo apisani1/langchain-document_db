@@ -15,16 +15,17 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.ext.asyncio import AsyncEngine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import Session
 
-from langchain.docstore.document import Document
 from langchain.indexes import (
     SQLRecordManager,
     aindex,
     index,
 )
 from langchain.indexes._sql_record_manager import UpsertionRecord
+from langchain.schema import (
+    BaseRetriever,
+    Document,
+)
 from langchain.schema.vectorstore import VectorStore
 from langchain_core.document_loaders.base import BaseLoader
 
@@ -40,21 +41,20 @@ class DocumentDB:
     (e.g., via text chunking) with respect to the original source documents.
 
     Args:
-            location (Path  str): the directory where the index will be saved
+            location (Path | str): the directory where the index will be saved
             vectorstore (VectorStore): The vectore store to store the embeddings.
             engine (Engine | AsyncEngine, optional): An already existing SQL Alchemy engine. Default is None.
             db_url (str | URL, optional): A database connection string used to create an SQL Alchemy engine.
                                           Default is None.
             engine_kwargs (dic, optional): Additional keyword arguments to be passed when creating the engine.
                                            Default is an empty dictionary.
-            async_mode (bool, optional): Whether to create an async engine. Driver should support async operations.
-                                         It only applies if db_url is provided. Default is False.
     """
 
     def __init__(
         self,
         location: Union[Path, str],
         vectorstore: VectorStore,
+        *,
         sql_engine: Optional[Union[Engine, AsyncEngine]] = None,
         db_url: Optional[Union[str, URL]] = None,
         engine_kwargs: Optional[Dict[str, Any]] = None,
@@ -83,6 +83,7 @@ class DocumentDB:
         cls,
         location: Union[Path, str],
         vectorstore: VectorStore,
+        *,
         db_url: Optional[Union[str, URL]] = None,
         engine_kwargs: Optional[Dict[str, Any]] = None,
         **kwargs,
@@ -97,7 +98,10 @@ class DocumentDB:
         await db.record_manager.acreate_schema()
         return db
 
-    def as_retriever(self, *args, **kwargs) -> VectorStore:
+    def as_retriever(self, *args, **kwargs) -> BaseRetriever:
+        """
+        Returns a retriever that uses the base vectorstore to retrieve documents.
+        """
         return self.vectorstore.as_retriever(*args, **kwargs)
 
     def delete_index(self) -> None:
@@ -114,7 +118,8 @@ class DocumentDB:
         Delete all the entries in the index and the associates entries in the vector store.
 
         Args:
-            id_key (str, optional): The key of the metadata entry use to index the documents. Defaults to "source".
+            source_id_key (str, optional): The key of the metadata entry use to index the documents.
+                                           Defaults to "source".
 
         Returns:
             dict: A dictionary with the number of entries deleted.
@@ -134,29 +139,29 @@ class DocumentDB:
         source_id_key: str = "source",
     ) -> Dict:
         """
-        Add or updated documents into the vector store and index
+        Add or updated documents into the vector store and index.
 
         Args:
             docs (BaseLoader | Iterable[Document]): Documents to add or update.
             cleanup (str, optional): Cleanup method. Defaults to "incremental".
                                     See: https://python.langchain.com/docs/modules/data_connection/indexing
-            source_id_key (str, optional): The key of the metadata used to identify the original document to create
-                                           the chunks. Defaults to "source".
+            source_id_key (str, optional): The key of the metadata entry use to index the documents.
+                                           Defaults to "source".
 
         Returns:
             dict: A dictionary with the number of entries added, deleted or skipped.
         """
-        return index(  # type: ignore
+        return index(
             docs,
             self.record_manager,
             self.vectorstore,
-            cleanup=cleanup,  # type: ignore
+            cleanup=cleanup,
             source_id_key=source_id_key,
         )
 
     def _check_source_presence(self, sources: List[str]) -> List[str]:
         """
-        Check which sources are present in the database.
+        Check which sources in a given list are present in the index.
 
         Args:
         sources (List[str]): List of sources to check.
@@ -165,7 +170,6 @@ class DocumentDB:
         List[str]: List of sources that are present in the database.
         """
         result = []
-
         with self.record_manager._make_session() as session:
             for source in sources:
                 if source is not None:
@@ -174,7 +178,6 @@ class DocumentDB:
                         (UpsertionRecord.group_id == source)
                         & (UpsertionRecord.namespace == self.record_manager.namespace)
                     )
-
                     if session.execute(stmt).first() is not None:
                         result.append(source)
 
@@ -182,22 +185,22 @@ class DocumentDB:
 
     def delete_documents(
         self,
-        docs_ids: List[str],
+        doc_sources: List[str],
         source_id_key: str = "source",
     ) -> Dict:
         """
-        Delete documents from the vector store and index
+        Delete documents from the vector store and index.
 
         Args:
-            docs_ids (List[str]): List of document ids to delete.
-            source_id_key (str, optional): The key of the metadata used to identify the original document to create
-                                           the chunks. Defaults to "source".
+            doc_sources (List[str]): List of document sources to delete.
+            source_id_key (str, optional): The key of the metadata entry use to index the documents.
+                                           Defaults to "source".
         """
         docs_to_delete = [
             Document(
-                page_content="Deleted DO NOT USE", metadata={source_id_key: doc_id}
+                page_content="Deleted DO NOT USE", metadata={source_id_key: source}
             )
-            for doc_id in self._check_source_presence(docs_ids)
+            for source in self._check_source_presence(doc_sources)
         ]
         return self.upsert_documents(docs_to_delete, source_id_key=source_id_key)
 
@@ -209,7 +212,8 @@ class DocumentDB:
         Delete all the entries in the index and the associates entries in the vector store.
 
         Args:
-            id_key (str, optional): The key of the metadata entry use to index the documents. Defaults to "source".
+            source_id_key (str, optional): The key of the metadata entry use to index the documents.
+                                           Defaults to "source".
 
         Returns:
             dict: A dictionary with the number of entries deleted.
@@ -234,9 +238,9 @@ class DocumentDB:
         Args:
             docs (BaseLoader | Iterable[Document]): Documents to add or update.
             cleanup (str, optional): Cleanup method. Defaults to "incremental".
-                                    See: https://python.langchain.com/docs/modules/data_connection/indexing
-            source_id_key (str, optional): The key of the metadata used to identify the original document to create
-                                           the chunks. Defaults to "source".
+                                     See: https://python.langchain.com/docs/modules/data_connection/indexing
+            source_id_key (str, optional): The key of the metadata entry use to index the documents.
+                                           Defaults to "source".
 
         Returns:
             dict: A dictionary with the number of entries added, deleted or skipped.
@@ -277,21 +281,21 @@ class DocumentDB:
 
     async def adelete_documents(
         self,
-        docs_ids: List[str],
+        doc_sources: List[str],
         source_id_key: str = "source",
     ) -> Dict:
         """
         Delete documents from the vector store and index
 
         Args:
-            docs_ids (List[str]): List of document ids to delete.
-            source_id_key (str, optional): The key of the metadata used to identify the original document to create
-                                           the chunks. Defaults to "source".
+            doc_sources (List[str]): List of document ids to delete.
+            source_id_key (str, optional): The key of the metadata entry use to index the documents.
+                                           Defaults to "source".
         """
         docs_to_delete = [
             Document(
-                page_content="Deleted DO NOT USE", metadata={source_id_key: doc_id}
+                page_content="Deleted DO NOT USE", metadata={source_id_key: source}
             )
-            for doc_id in await self._acheck_source_presence(docs_ids)
+            for source in await self._acheck_source_presence(doc_sources)
         ]
         return await self.aupsert_documents(docs_to_delete, source_id_key=source_id_key)

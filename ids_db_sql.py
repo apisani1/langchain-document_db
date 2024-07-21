@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, Column, String, Table
+from sqlalchemy import create_engine, Column, String
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 from typing import List
@@ -16,6 +16,9 @@ class IDEntry(Base):
 
 
 class IDsDB:
+    """
+
+    """
     def __init__(self, db_path: str = "", db_name: str = "ids_db.sqlite"):
         db_url = f"sqlite:///{os.path.join(db_path, db_name)}"
         self.engine = create_engine(db_url)
@@ -23,6 +26,17 @@ class IDsDB:
         self.Session = sessionmaker(bind=self.engine)
 
     def add_ids(self, key: str, ids: List[str], namespace: str = ""):
+        """
+        Add IDs to the database.
+
+        Args:
+            key (str): The key for the IDs to add.
+            ids (List[str]): List of IDs to add.
+            namespace (str): The namespace for the IDs.
+
+        Return:
+            None
+        """
         if ids and isinstance(ids, list):
             session = self.Session()
             try:
@@ -43,6 +57,16 @@ class IDsDB:
                 session.close()
 
     def get_ids(self, key: str, namespace: str = "") -> List[str]:
+        """
+        Get IDs from the database.
+
+        Args:
+            key (str): The key for the IDs to get.
+            namespace (str): The namespace for the IDs.
+
+        Return:
+            List[str]: List of IDs
+        """
         session = self.Session()
         try:
             entry = (
@@ -55,6 +79,16 @@ class IDsDB:
             session.close()
 
     def delete_ids(self, key: str, namespace: str = ""):
+        """
+        Delete IDs from the database.
+
+        Args:
+            key (str): The key for the IDs to delete.
+            namespace (str): The namespace for the IDs.
+
+        Return:
+            None
+        """
         session = self.Session()
         try:
             entry = (

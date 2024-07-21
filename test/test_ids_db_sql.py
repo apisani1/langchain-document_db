@@ -1,4 +1,3 @@
-import os
 import tempfile
 
 import pytest
@@ -9,13 +8,10 @@ from ids_db_sql import IDsDB
 @pytest.fixture
 def ids_db():
     # Create a temporary directory for the test database
-    temp_dir = tempfile.mkdtemp()
-    db_name = "test_ids_db.sqlite"
-    db = IDsDB(db_path=temp_dir, db_name=db_name)
-    yield db
-    # Cleanup after tests
-    os.remove(os.path.join(temp_dir, db_name))
-    os.rmdir(temp_dir)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        db_name = "test_ids_db.sqlite"
+        db = IDsDB(db_path=temp_dir, db_name=db_name)
+        yield db
 
 
 def test_add_ids(ids_db):

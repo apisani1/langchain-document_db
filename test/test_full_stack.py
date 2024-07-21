@@ -131,7 +131,6 @@ async def adocument_db(
         location=temp_dir,
         vectorstore=multi_vectorstore,
         db_url="sqlite+aiosqlite:///:memory:",
-        async_mode=True,
     )
     yield document_db
     # Cleanup after tests

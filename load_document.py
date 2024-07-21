@@ -26,16 +26,16 @@ def chunk_docs(
     Recursively tries to split by different characters to find one that works.
 
     Args:
-    chunk_size (int, optional): Maximum size of chunks to return, Defaults to 4000.
-    chunk_overlap (int, optional): Overlap in characters between chunks. Defaults to 200.
-    separators (list, optional): List of strings with separators. Defaults to None. If None uses ["\n\n", "\n", " "]
-    length_function (func, optional): Function that measures the length of given chunks. Defaults to len.
-    keep_separator (bool, optional): Whether to keep the separator in the chunks. Defaults to True.
-    is_separator_regex (bool, optional): Wheter the separator is a regular expression. Defaults to False.
-    add_start_index (bool, optional): If True, includes chunk's start index in metadata. Defaults to False.
+        chunk_size (int, optional): Maximum size of chunks to return, Defaults to 4000.
+        chunk_overlap (int, optional): Overlap in characters between chunks. Defaults to 200.
+        separators (list, optional): List of strings with separators. Defaults to None. If None uses ["\n\n", "\n", " "]
+        length_function (func, optional): Function that measures the length of given chunks. Defaults to len.
+        keep_separator (bool, optional): Whether to keep the separator in the chunks. Defaults to True.
+        is_separator_regex (bool, optional): Wheter the separator is a regular expression. Defaults to False.
+        add_start_index (bool, optional): If True, includes chunk's start index in metadata. Defaults to False.
 
     Returns:
-     List of Langchain documents or None if an error was encountered.
+        List of Langchain documents or None if an error was encountered.
     """
 
     text_splitter = text_splitter or RecursiveCharacterTextSplitter(**kwargs)
@@ -105,10 +105,10 @@ def load_document(file_path: str, *args: Any, **kwargs: Any) -> list[Document]:
     is not available tries with the Unstructured file loader.
 
     Args:
-    file_path (str): File path or url address of the document to load.
+        file_path (str): File path or url address of the document to load.
 
     Returns:
-    List of Langchain documents or None if an error was encountered.
+        List of Langchain documents.
     """
     loader: BaseLoader
 
@@ -190,24 +190,26 @@ def load_unstructured_document(
     type.
 
     Args:
-    mode: You can run the loader in one of three modes: "single", "paged", and "elements".
-    If you use "single" mode, the document will be returned as a single langchain Document object.
-    If you use "paged" mode, the document will be splitted by page.
-    If you use "elements" mode, the unstructured library will split the document into elements
-    such as Title and NarrativeText.
+        mode: You can run the loader in one of three modes: "single", "paged", and "elements".
+              If you use "single" mode, the document will be returned as a single langchain Document object.
+              If you use "paged" mode, the document will be splitted by page.
+              If you use "elements" mode, the unstructured library will split the document into elements
+              such as Title and NarrativeText.
+        load_tables: Set it to True for unstructured infering the structure of tables automatically.
 
-    load_tables: Set top true for unstructured infering the structure of tables automatically.
+        You can pass in additional unstructured kwargs after mode to apply different unstructured settings. The
+        following arguments manage the chunking strategy of unstructed. It may be redundant to use both.
 
-    You can pass in additional unstructured kwargs after mode to apply different unstructured settings.
-
-    The following arguments manage the chunking strategy of unstructed. It may be redundant to use both.
-    chunking_strategy: Strategy used for chunking text into larger or smaller elements.
-                       Defaults to `None` with optional arg of 'by_title'
-    multipage_sections: If True, sections can span multiple pages. Defaults to True.
-    combine_text_under_n_chars: Combines elements (for example a series of titles) until a section reaches
-                                a length of n characters.
-    new_after_n_chars: Cuts off new sections once they reach a length of n characters, a soft max.
-    max_characters: Chunks elements text and text_as_html (if present) into chunks of length n characters, a hard max.
+        chunking_strategy: Strategy used for chunking text into larger or smaller elements. Defaults to `None` with
+                           optional arg of 'by_title'
+        multipage_sections: If True, sections can span multiple pages. Defaults to True.
+        combine_text_under_n_chars: Combines elements (for example a series of titles) until a section reaches
+                                    a length of n characters.
+        new_after_n_chars: Cuts off new sections once they reach a length of n characters, a soft max.
+        max_characters: Chunks elements text and text_as_html (if present) into chunks of length n characters,
+                        a hard max.
+    Returns:
+        List of Langchain documents.
     """
     from langchain.document_loaders.unstructured import UnstructuredFileLoader
 
