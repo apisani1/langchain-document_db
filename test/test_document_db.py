@@ -643,7 +643,7 @@ def test_delete(document_db: DocumentDB) -> None:
         "num_updated": 0,
     }
     to_delete = list(set(doc.metadata["source"] for doc in docs))
-    assert document_db.delete_documents(to_delete) == {
+    assert document_db.delete_documents(to_delete + ["not_a_source"]) == {
         "num_added": len(to_delete),
         "num_deleted": len(docs),
         "num_skipped": 0,
@@ -652,7 +652,7 @@ def test_delete(document_db: DocumentDB) -> None:
     contents = sorted(
         [document.page_content for document in document_db.vectorstore.store.values()]
     )
-    assert contents == ["Deleted DO NOT USE", "Deleted DO NOT USE"]
+    assert contents == ["Deleted DO NOT USE"] * len(to_delete)
 
 
 @pytest.mark.requires("aiosqlite")
@@ -680,7 +680,7 @@ async def test_adelete(adocument_db: DocumentDB) -> None:
         "num_updated": 0,
     }
     to_delete = list(set(doc.metadata["source"] for doc in docs))
-    assert await adocument_db.adelete_documents(to_delete) == {
+    assert await adocument_db.adelete_documents(to_delete + ["not_a_source"]) == {
         "num_added": len(to_delete),
         "num_deleted": len(docs),
         "num_skipped": 0,
@@ -689,7 +689,7 @@ async def test_adelete(adocument_db: DocumentDB) -> None:
     contents = sorted(
         [document.page_content for document in adocument_db.vectorstore.store.values()]
     )
-    assert contents == ["Deleted DO NOT USE", "Deleted DO NOT USE"]
+    assert contents == ["Deleted DO NOT USE"] * len(to_delete)
 
 
 def test_delete_nonexistingkey(document_db: DocumentDB) -> None:
@@ -709,14 +709,14 @@ def test_delete_nonexistingkey(document_db: DocumentDB) -> None:
         ),
     ]
     assert document_db.upsert_documents(docs) == {
-        "num_added": 3,
+        "num_added": len(docs),
         "num_deleted": 0,
         "num_skipped": 0,
         "num_updated": 0,
     }
     to_delete = ["nonexistingkey1", "nonexistingkey2"]
     assert document_db.delete_documents(to_delete) == {
-        "num_added": len(to_delete),
+        "num_added": 0,
         "num_deleted": 0,
         "num_skipped": 0,
         "num_updated": 0,
@@ -742,14 +742,14 @@ async def test_adelete_nonexistingkey(adocument_db: DocumentDB) -> None:
         ),
     ]
     assert await adocument_db.aupsert_documents(docs) == {
-        "num_added": 3,
+        "num_added": len(docs),
         "num_deleted": 0,
         "num_skipped": 0,
         "num_updated": 0,
     }
     to_delete = ["nonexistingkey1", "nonexistingkey2"]
     assert await adocument_db.adelete_documents(to_delete) == {
-        "num_added": len(to_delete),
+        "num_added": 0,
         "num_deleted": 0,
         "num_skipped": 0,
         "num_updated": 0,

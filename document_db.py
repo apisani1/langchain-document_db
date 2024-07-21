@@ -12,15 +12,19 @@ from typing import (
 from sqlalchemy import (
     URL,
     Engine,
+    select,
 )
 from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import Session
 
 from langchain.docstore.document import Document
 from langchain.indexes import (
     SQLRecordManager,
+    aindex,
     index,
-    aindex
 )
+from langchain.indexes._sql_record_manager import UpsertionRecord
 from langchain.schema.vectorstore import VectorStore
 from langchain_core.document_loaders.base import BaseLoader
 
@@ -150,6 +154,32 @@ class DocumentDB:
             source_id_key=source_id_key,
         )
 
+    def _check_source_presence(self, sources: List[str]) -> List[str]:
+        """
+        Check which sources are present in the database.
+
+        Args:
+        sources (List[str]): List of sources to check.
+
+        Returns:
+        List[str]: List of sources that are present in the database.
+        """
+        result = []
+
+        with self.record_manager._make_session() as session:
+            for source in sources:
+                if source is not None:
+                    # Query to check if the source exists in the database
+                    stmt = select(UpsertionRecord).where(
+                        (UpsertionRecord.group_id == source)
+                        & (UpsertionRecord.namespace == self.record_manager.namespace)
+                    )
+
+                    if session.execute(stmt).first() is not None:
+                        result.append(source)
+
+        return result
+
     def delete_documents(
         self,
         docs_ids: List[str],
@@ -167,7 +197,7 @@ class DocumentDB:
             Document(
                 page_content="Deleted DO NOT USE", metadata={source_id_key: doc_id}
             )
-            for doc_id in docs_ids
+            for doc_id in self._check_source_presence(docs_ids)
         ]
         return self.upsert_documents(docs_to_delete, source_id_key=source_id_key)
 
@@ -219,6 +249,32 @@ class DocumentDB:
             source_id_key=source_id_key,
         )
 
+    async def _acheck_source_presence(self, sources: List[str]) -> List[str]:
+        """
+        Check which sources are present in the database.
+
+        Args:
+        sources (List[str]): List of sources to check.
+
+        Returns:
+        List[str]: List of sources that are present in the database.
+        """
+        result = []
+
+        async with self.record_manager._amake_session() as session:
+            for source in sources:
+                if source is not None:
+                    # Query to check if the source exists in the database
+                    stmt = select(UpsertionRecord).where(
+                        (UpsertionRecord.group_id == source)
+                        & (UpsertionRecord.namespace == self.record_manager.namespace)
+                    )
+
+                    if (await session.execute(stmt)).first() is not None:
+                        result.append(source)
+
+        return result
+
     async def adelete_documents(
         self,
         docs_ids: List[str],
@@ -236,6 +292,6 @@ class DocumentDB:
             Document(
                 page_content="Deleted DO NOT USE", metadata={source_id_key: doc_id}
             )
-            for doc_id in docs_ids
+            for doc_id in await self._acheck_source_presence(docs_ids)
         ]
         return await self.aupsert_documents(docs_to_delete, source_id_key=source_id_key)
