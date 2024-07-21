@@ -1,4 +1,3 @@
-import os
 import tempfile
 import uuid
 from datetime import datetime
