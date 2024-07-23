@@ -2,6 +2,7 @@ import uuid
 from typing import (
     Any,
     Callable,
+    Dict,
     Iterable,
     List,
     Optional,
@@ -127,7 +128,13 @@ class MultiVectorStore(VectorStore):
         ids_db_path: str = "",
         id_key: str = "doc_id",
         child_id_key: str = "child_ids",
-        functor: Union[str, Callable] = None,
+        functor: Optional[
+            Union[
+                str,
+                Callable,
+                List[Union[str, Callable, Tuple[Union[str, Callable], Dict]]],
+            ]
+        ] = None,
         func_kwargs: Optional[dict] = None,
         llm: Optional[BaseLanguageModel] = None,
         max_retries: int = 0,
@@ -155,23 +162,56 @@ class MultiVectorStore(VectorStore):
 
     def set_func(
         self,
-        functor: Union[str, Callable],
-        func_kwargs: Optional[dict] = None,
+        functor: Union[
+            str,
+            Callable,
+            List[Union[str, Callable, Tuple[Union[str, Callable], Dict]]],
+        ],
+        func_kwargs: Optional[Dict] = None,
         llm: Optional[BaseLanguageModel] = None,
         max_retries: Optional[int] = None,
     ) -> None:
-        self.functor, self.func_kwargs = self._get_func(functor, func_kwargs, llm)
+        self.func_list = self._get_func_list(functor, func_kwargs, llm)
         if max_retries is not None:
             self.max_retries = max_retries
 
     @classmethod
-    def _get_func(
+    def _get_func_list(
         cls,
-        functor: Union[str, Callable],
-        func_kwargs: Optional[dict],
+        functor: Union[
+            str,
+            Callable,
+            List[Union[str, Callable, Tuple[Union[str, Callable], Dict]]],
+        ],
+        func_kwargs: Optional[Dict] = None,
         llm: Optional[BaseLanguageModel] = None,
-    ) -> tuple[Callable, dict]:
-        func_kwargs = func_kwargs or {}
+    ) -> List[Tuple[Callable, dict]]:
+        if isinstance(functor, list):
+            func_list = cls._expand_func_list(functor)
+        else:
+            func_list = [(functor, func_kwargs or {})]
+        return [
+            cls._get_func(functor, func_kwargs, llm)
+            for functor, func_kwargs in func_list
+        ]
+
+    @classmethod
+    def _expand_func_list(
+        cls, func_list: List[Union[str, Callable, Tuple[Union[str, Callable], Dict]]]
+    ) -> list[Union[str, Callable]]:
+        if not func_list:
+            return []
+        func = func_list[0]
+        if isinstance(func, tuple):
+            return [func] + cls._expand_func_list(func_list[1:])
+        return [(func, {})] + cls._expand_func_list(func_list[1:])
+
+    @classmethod
+    def _get_func(
+        functor: Union[str, Callable],
+        func_kwargs: Dict,
+        llm: Optional[BaseLanguageModel] = None,
+    ) -> Tuple[Callable, dict]:
         if callable(functor):
             return functor, func_kwargs
         if isinstance(functor, str):
@@ -314,11 +354,16 @@ class MultiVectorStore(VectorStore):
         self,
         documents: Iterable[Document],
         ids: Optional[list[str]] = None,
-        functor: Union[str, Callable] = None,
+        functor: Optional[
+            Union[
+                str,
+                Callable,
+                List[Union[str, Callable, Tuple[Union[str, Callable], Dict]]],
+            ]
+        ] = None,
         func_kwargs: Optional[dict] = None,
         llm: Optional[BaseLanguageModel] = None,
         max_retries: Optional[int] = None,
-        first_time: bool = True,
         add_originals: bool = False,
         **kwargs: Any,
     ) -> list[str]:
@@ -347,29 +392,33 @@ class MultiVectorStore(VectorStore):
             List[str]: List of ids of the parent documents.
         """
         # configure processing function and arguments
-        if functor:
-            functor, func_kwargs = self._get_func(functor, func_kwargs, llm)
-        else:
-            functor = self.functor
-            func_kwargs = self.func_kwargs
+        func_list = (
+            self._get_func_list(functor, func_kwargs, llm)
+            if functor
+            else self.func_list
+        )
         max_retries = max_retries or self.max_retries
 
         # generate ids for the parent documents
         ids = self._get_ids(ids, documents)
 
-        # generate child document using the processing function and
+        # generate child document using the processing functions and
         # add cross reference ids between the parent documents and their childs
         # add the child documents to the vector store
         for i, doc in enumerate(documents):
             doc_id = ids[i]
             doc.metadata[self.id_key] = doc_id
 
-            if functor:
-            # try to generate child documents using the processing function
+            for functor, func_kwargs in func_list:
+                if not functor:
+                    continue
+                # try to generate child documents using the processing function
                 retries = 0
                 sub_docs = None
                 while not sub_docs and retries <= self.max_retries:
-                    sub_docs = functor(doc, metadata={self.id_key: doc_id}, **func_kwargs)
+                    sub_docs = functor(
+                        doc, metadata={self.id_key: doc_id}, **func_kwargs
+                    )
                     if sub_docs:
                         child_ids = self.vectorstore.add_documents(sub_docs, **kwargs)
                         self.ids_db.add_ids(doc_id, child_ids, "child_ids")
@@ -379,9 +428,8 @@ class MultiVectorStore(VectorStore):
                 alias = self.vectorstore.add_documents([doc], ids=[doc_id], **kwargs)
                 self.ids_db.add_ids(doc_id, alias, "aliases")
 
-        # add the original documents to the document store for index retrieval
-        if first_time:
-            self.docstore.mset(list(zip(ids, documents)))
+        # add the parent documents to the document store for index retrieval
+        self.docstore.mset(list(zip(ids, documents)))
 
         return ids
 
@@ -413,106 +461,6 @@ class MultiVectorStore(VectorStore):
             List[str]: List of ids of the parent documents.
         """
         return await run_in_executor(None, self.add_documents, documents, **kwargs)
-
-    def _expand_func_list(
-        self, func_list: list[Union[str, Callable, Tuple[Union[str, Callable], dict]]]
-    ) -> list[Union[str, Callable]]:
-        if not func_list:
-            return []
-        func = func_list[0]
-        if isinstance(func, tuple):
-            return [func] + self._expand_func_list(func_list[1:])
-        return [(func, {})] + self._expand_func_list(func_list[1:])
-
-    def add_documents_multiple(
-        self,
-        documents: Iterable[Document],
-        func_list: List[Union[str, Callable, Tuple[Union[str, Callable], dict]]],
-        ids: Optional[list[str]] = None,
-        add_originals: bool = False,
-        llm: Optional[BaseLanguageModel] = None,
-        max_retries: Optional[int] = None,
-        **kwargs: Any,
-    ) -> list[str]:
-        """
-        Run documents through the document transformation functions and add the resulting child documents to
-        the vectorstore.
-
-        Args:
-            documents (Iterable[Document]: Paremt documents to process and generate the child documents to be
-                added to the vectorstore.
-            func_list (list[str | Callable | tuple[str | Callable, dict]]): List of functions and kwargs to transform a
-                parent document into child documents.
-            llm (Optional[BaseLanguageModel]): Language model to use for the transformation function.
-                Defaults to None. If there is no language model provided and a transformation function rquires a LLM,
-                an exception will be raised.
-            max_retries (Optional[int]): Maximum number of retries to use when failing to transfomation process.
-                Defaults to the maximum number of retries selected at the initialization of the class instance.
-            add_originals (bool): Whether to add the original documents to the vectorstore.
-                Defaults to False.
-            kwargs:
-                Additional kwargs to pass to the vectorstore.
-
-        Returns:
-            List[str]: List of ids of the parent documents.
-        """
-        ids = self._get_ids(ids, documents)
-        func_list = self._expand_func_list(func_list)
-        self.add_documents(
-            documents,
-            ids=ids,
-            functor=func_list[0][0],
-            func_kwargs=func_list[0][1],
-            first_time=True,
-            add_originals=add_originals,
-            llm=llm,
-            max_retries=max_retries,
-            **kwargs,
-        )
-        for f, fk in func_list[1:]:
-            self.add_documents(
-                documents,
-                ids=ids,
-                functor=f,
-                func_kwargs=fk,
-                first_time=False,
-                add_originals=False,
-                llm=llm,
-                max_retries=max_retries,
-                **kwargs,
-            )
-        return ids
-
-    async def aadd_documents_multiple(
-        self,
-        documents: list[Document],
-        **kwargs: Any,
-    ) -> list[str]:
-        """
-        Run documents through the document transformation function and add the resulting child documents to
-        the vectorstore.
-
-        Args:
-            documents (Iterable[Document]: Paremt documents to process and generate the child documents to be
-                added to the vectorstore.
-            func_list (list[str | Callable | tuple[str | Callable, dict]]): List of functions and kwargs to transform a
-                parent document into child documents.
-            llm (Optional[BaseLanguageModel]): Language model to use for the transformation function.
-                Defaults to None. If there is no language model provided and a transformation function rquires a LLM,
-                an exception will be raised.
-            max_retries (Optional[int]): Maximum number of retries to use when failing to transfomation process.
-                Defaults to the maximum number of retries selected at the initialization of the class instance.
-            add_originals (bool): Whether to add the original documents to the vectorstore.
-                Defaults to False.
-            kwargs:
-                Additional kwargs to pass to the vectorstore.
-
-        Returns:
-            List[str]: List of ids of the parent documents.
-        """
-        return await run_in_executor(
-            None, self.add_documents_multiple, documents, **kwargs
-        )
 
     def delete(self, ids: Optional[list[str]] = None, **kwargs: Any) -> bool:
         """
