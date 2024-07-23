@@ -305,7 +305,7 @@ def test_add_documents_multiple(
         "summary",
         ("question", {"q": 2}),
     ]
-    ids = multi_vectorstore.add_documents_multiple(docs, func_list=func_list, llm=LLM)
+    ids = multi_vectorstore.add_documents(docs, functor=func_list, llm=LLM)
 
     assert len(ids) == len(docs)
     assert len(multi_vectorstore.docstore.store) == len(docs)
@@ -330,8 +330,8 @@ async def test_aadd_documents_multiple(
         "summary",
         ("question", {"q": 2}),
     ]
-    ids = await multi_vectorstore.aadd_documents_multiple(
-        docs, func_list=func_list, llm=LLM
+    ids = await multi_vectorstore.aadd_documents(
+        docs, functor=func_list, llm=LLM
     )
 
     assert len(ids) == len(docs)

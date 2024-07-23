@@ -208,6 +208,7 @@ class MultiVectorStore(VectorStore):
 
     @classmethod
     def _get_func(
+        cls,
         functor: Union[str, Callable],
         func_kwargs: Dict,
         llm: Optional[BaseLanguageModel] = None,
