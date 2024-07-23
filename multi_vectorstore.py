@@ -145,7 +145,7 @@ class MultiVectorStore(VectorStore):
         self.child_id_key = child_id_key
         if not functor:
             functor = "chunk"
-            func_kwargs = {"chunk_size": 500, "chunk_overlap": 50}
+            func_kwargs = func_kwargs or {"chunk_size": 500, "chunk_overlap": 50}
         self.set_func(functor, func_kwargs, llm, max_retries)
         self.search_kwargs = search_kwargs or {}
         self.search_type = search_type
@@ -190,6 +190,8 @@ class MultiVectorStore(VectorStore):
                     chain = load_question_chain(llm)
                     func_kwargs.update({"chain": chain})
                     return _generate_questions, func_kwargs
+                case "none":
+                    return None, None
                 case _:
                     pass
         raise ValueError("Bad functor for MultiVectorStore")
@@ -300,6 +302,14 @@ class MultiVectorStore(VectorStore):
         """Run more texts through the embeddings and add to the vectorstore."""
         return await self.vectorstore.aadd_texts(texts, metadatas, **kwargs)
 
+    def _get_ids(self, ids: List[str], docs: Iterable[Document]) -> List[str]:
+        if not ids:
+            if len(docs) and self.id_key in docs[0].metadata:
+                ids = [doc.metadata[self.id_key] for doc in docs]
+            else:
+                ids = [str(uuid.uuid4()) for _ in docs]
+        return ids
+
     def add_documents(
         self,
         documents: Iterable[Document],
@@ -344,25 +354,26 @@ class MultiVectorStore(VectorStore):
             func_kwargs = self.func_kwargs
         max_retries = max_retries or self.max_retries
 
-        # generate ids for the original documents
-        if not ids:
-            ids = [str(uuid.uuid4()) for _ in documents]
+        # generate ids for the parent documents
+        ids = self._get_ids(ids, documents)
 
-        # generate chikd document using the processing function and
+        # generate child document using the processing function and
         # add cross reference ids between the parent documents and their childs
         # add the child documents to the vector store
         for i, doc in enumerate(documents):
             doc_id = ids[i]
             doc.metadata[self.id_key] = doc_id
 
-            retries = 0
-            sub_docs = None
-            while not sub_docs and retries <= self.max_retries:
-                sub_docs = functor(doc, metadata={self.id_key: doc_id}, **func_kwargs)
-                if sub_docs:
-                    child_ids = self.vectorstore.add_documents(sub_docs, **kwargs)
-                    self.ids_db.add_ids(doc_id, child_ids, "child_ids")
-                retries += 1
+            if functor:
+            # try to generate child documents using the processing function
+                retries = 0
+                sub_docs = None
+                while not sub_docs and retries <= self.max_retries:
+                    sub_docs = functor(doc, metadata={self.id_key: doc_id}, **func_kwargs)
+                    if sub_docs:
+                        child_ids = self.vectorstore.add_documents(sub_docs, **kwargs)
+                        self.ids_db.add_ids(doc_id, child_ids, "child_ids")
+                    retries += 1
 
             if add_originals:
                 alias = self.vectorstore.add_documents([doc], ids=[doc_id], **kwargs)
@@ -445,8 +456,7 @@ class MultiVectorStore(VectorStore):
         Returns:
             List[str]: List of ids of the parent documents.
         """
-        if not ids:
-            ids = [str(uuid.uuid4()) for _ in documents]
+        ids = self._get_ids(ids, documents)
         func_list = self._expand_func_list(func_list)
         self.add_documents(
             documents,
@@ -717,7 +727,7 @@ class MultiVectorStore(VectorStore):
         """Return documents with the given ids."""
         return self.docstore.mget(ids)
 
-    def get_child_ids(self, id: str) -> List[Document]:
+    def get_child_ids(self, id: str) -> List[str]:
         doc = self.docstore.mget([id])[0]
         if doc:
             doc_id = doc.metadata[self.id_key]
