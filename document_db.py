@@ -15,12 +15,7 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.ext.asyncio import AsyncEngine
-
-from langchain.indexes import (
-    SQLRecordManager,
-    aindex,
-    index,
-)
+from langchain.indexes import SQLRecordManager
 from langchain.indexes._sql_record_manager import UpsertionRecord
 from langchain.schema import (
     BaseRetriever,
@@ -28,6 +23,11 @@ from langchain.schema import (
 )
 from langchain.schema.vectorstore import VectorStore
 from langchain_core.document_loaders.base import BaseLoader
+
+from indexing import (
+    aindex,
+    index,
+)
 
 
 class DocumentDB:

@@ -138,7 +138,7 @@ class MultiVectorStore(VectorStore):
         func_kwargs: Optional[dict] = None,
         llm: Optional[BaseLanguageModel] = None,
         max_retries: int = 0,
-        search_kwargs: Optional[dict] = None,
+        search_kwargs: Optional[Dict] = None,
         search_type: SearchType = SearchType.similarity,
         **kwargs: Any,
     ) -> None:
