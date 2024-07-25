@@ -52,7 +52,6 @@ class MultiVectorDocumentDB(DocumentDB):
         sql_engine: Optional[Union[Engine, AsyncEngine]] = None,
         db_url: Optional[Union[str, URL]] = None,
         engine_kwargs: Optional[Dict[str, Any]] = None,
-        async_mode: bool = False,
         functor: Optional[
             Union[
                 str,
@@ -69,6 +68,96 @@ class MultiVectorDocumentDB(DocumentDB):
         **kwargs: Any,
     ) -> None:
 
+        multi_vectorstore = self.prepare_multi_vector_store(
+            location,
+            docstore=docstore,
+            cached=cached,
+            vectorstore=vectorstore,
+            functor=functor,
+            func_kwargs=func_kwargs,
+            llm=llm,
+            max_retries=max_retries,
+            search_kwargs=search_kwargs,
+            search_type=search_type,
+            **kwargs,
+        )
+        super().__init__(
+            location=location,
+            vectorstore=multi_vectorstore,
+            sql_engine=sql_engine,
+            db_url=db_url,
+            engine_kwargs=engine_kwargs,
+            async_mode=False,
+        )
+
+    @classmethod
+    async def ainit(
+        cls,
+        location: Union[Path, str],
+        *,
+        docstore: Optional[BaseStore[str, Document]] = None,
+        vectorstore: Optional[VectorStore] = None,
+        db_url: Optional[Union[str, URL]] = None,
+        engine_kwargs: Optional[Dict[str, Any]] = None,
+        functor: Optional[
+            Union[
+                str,
+                Callable,
+                List[Union[str, Callable, Tuple[Union[str, Callable], Dict]]],
+            ]
+        ] = None,
+        func_kwargs: Optional[dict] = None,
+        llm: Optional[BaseLanguageModel] = None,
+        max_retries: int = 0,
+        search_kwargs: Optional[dict] = None,
+        search_type: SearchType = SearchType.similarity,
+        cached: bool = False,
+        **kwargs: Any,
+    ) -> "MultiVectorDocumentDB":
+        multi_vectorstore = cls.prepare_multi_vector_store(
+            location,
+            docstore=docstore,
+            cached=cached,
+            vectorstore=vectorstore,
+            functor=functor,
+            func_kwargs=func_kwargs,
+            llm=llm,
+            max_retries=max_retries,
+            search_kwargs=search_kwargs,
+            search_type=search_type,
+            **kwargs,
+        )
+        return await super().ainit(
+            location=location,
+            vectorstore=multi_vectorstore,
+            db_url=db_url,
+            engine_kwargs=engine_kwargs,
+        )
+
+    @staticmethod
+    def prepare_multi_vector_store(
+        location: Union[Path, str],
+        *,
+        docstore: Optional[BaseStore[str, Document]] = None,
+        cached: bool = False,
+        vectorstore: Optional[VectorStore] = None,
+        functor: Optional[
+            Union[
+                str,
+                Callable,
+                List[Union[str, Callable, Tuple[Union[str, Callable], Dict]]],
+            ]
+        ] = None,
+        func_kwargs: Optional[dict] = None,
+        llm: Optional[BaseLanguageModel] = None,
+        max_retries: int = 0,
+        search_kwargs: Optional[dict] = None,
+        search_type: SearchType = SearchType.similarity,
+        **kwargs: Any,
+    ) -> MultiVectorStore:
+        """
+        Prepare the multi vector store.
+        """
         docstore = docstore or CachedDocStore(location + "/parent_docs", cached=cached)
 
         if not vectorstore:
@@ -81,7 +170,7 @@ class MultiVectorDocumentDB(DocumentDB):
 
         llm = llm or ChatOpenAI()
 
-        multi_vectorstore = MultiVectorStore(
+        return MultiVectorStore(
             vectorstore=vectorstore,
             docstore=docstore,
             ids_db_path=location,
@@ -92,27 +181,5 @@ class MultiVectorDocumentDB(DocumentDB):
             max_retries=max_retries,
             search_kwargs=search_kwargs,
             search_type=search_type,
-            **kwargs
-        )
-        super().__init__(
-            location=location,
-            vectorstore=multi_vectorstore,
-            sql_engine=sql_engine,
-            db_url=db_url,
-            engine_kwargs=engine_kwargs,
-            async_mode=async_mode,
-        )
-
-    @classmethod
-    async def ainit(
-        cls,
-        *args: Any,
-        **kwargs: Any,
-    ) -> "MultiVectorDocumentDB":
-        db = MultiVectorDocumentDB(
-            *args,
-            async_mode=True,
             **kwargs,
         )
-        await db.record_manager.acreate_schema()
-        return db

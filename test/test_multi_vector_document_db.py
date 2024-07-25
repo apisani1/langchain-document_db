@@ -22,8 +22,7 @@ import pytest_asyncio
 from langchain_core.document_loaders import BaseLoader
 from langchain_core.documents import Document
 
-from cached_docstore import CachedDocStore
-from document_db import DocumentDB
+from multi_vector_document_db import MultiVectorDocumentDB
 from load_document import load_document
 from multi_vectorstore import (
     MultiVectorStore,
@@ -53,7 +52,12 @@ def docs() -> List[Document]:
     chunks = []
     for doc_path in DOCS:
         chunks.extend(
-            load_document(doc_path, chunk_it=True, chunk_size=LARGE_CHUNK_SIZE)
+            load_document(
+                doc_path,
+                chunk_it=True,
+                chunk_size=LARGE_CHUNK_SIZE,
+                chunk_overlap=LARGE_CHUNK_SIZE * 0.1,
+            )
         )
     return chunks
 
@@ -72,48 +76,28 @@ def docs_per_source(docs: List[Document]) -> Dict:
 def sub_docs_chunk(docs: List[Document]) -> List[Document]:
     sub_docs = []
     for doc in docs:
-        sub_docs.extend(chunk(doc, chunk_size=SMALL_CHUNK_SIZE))
+        sub_docs.extend(
+            chunk(
+                doc, chunk_size=SMALL_CHUNK_SIZE, chunk_overlap=SMALL_CHUNK_SIZE * 0.1
+            )
+        )
     return sub_docs
 
 
 @pytest.fixture(scope="function")
-def docstore() -> Generator[CachedDocStore, None, None]:
-    # Create a temporary directory for testing
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Instantiate the CachedDocStore with the temporary directory as the root path
-        store = CachedDocStore(temp_dir, cached=True)
-        yield store
-
-
-@pytest.fixture(scope="function")
-def multi_vectorstore(
-    docstore: CachedDocStore,
-) -> Generator[MultiVectorStore, None, None]:
-    """MultiVectorStore fixture."""
-    # Create a temporary directory for testing
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Instantiate the MultiVectorStore with the temporary directory as the root path
-        multi_vectorstore = MultiVectorStore(
-            vectorstore=InMemoryVectorStore(),
-            docstore=docstore,
-            ids_db_path=temp_dir,
-            functor="chunk",
-            func_kwargs={"chunk_size": SMALL_CHUNK_SIZE},
-        )
-        yield multi_vectorstore
-
-
-@pytest.fixture(scope="function")
-def document_db(
-    multi_vectorstore: MultiVectorStore,
-) -> Generator[DocumentDB, None, None]:
+def document_db() -> Generator[MultiVectorDocumentDB, None, None]:
     """Document DB fixture."""
     # Create a temporary directory for the test database
     temp_dir = tempfile.mkdtemp()
-    document_db = DocumentDB(
+    document_db = MultiVectorDocumentDB(
         location=temp_dir,
-        vectorstore=multi_vectorstore,
+        vectorstore=InMemoryVectorStore(),
         db_url="sqlite:///:memory:",
+        functor="chunk",
+        func_kwargs={
+            "chunk_size": SMALL_CHUNK_SIZE,
+            "chunk_overlap": SMALL_CHUNK_SIZE * 0.1,
+        }
     )
     yield document_db
     # Cleanup after tests
@@ -121,24 +105,29 @@ def document_db(
 
 
 @pytest_asyncio.fixture
-async def adocument_db(
-    multi_vectorstore: MultiVectorStore,
-) -> AsyncGenerator[DocumentDB, None]:
+async def adocument_db() -> AsyncGenerator[MultiVectorDocumentDB, None]:
     """Document DB fixture."""
     # Create a temporary directory for the test database
     temp_dir = tempfile.mkdtemp()
-    document_db = await DocumentDB.ainit(
+    adocument_db = await MultiVectorDocumentDB.ainit(
         location=temp_dir,
-        vectorstore=multi_vectorstore,
+        vectorstore=InMemoryVectorStore(),
         db_url="sqlite+aiosqlite:///:memory:",
+        functor="chunk",
+        func_kwargs={
+            "chunk_size": SMALL_CHUNK_SIZE,
+            "chunk_overlap": SMALL_CHUNK_SIZE * 0.1,
+        }
     )
-    yield document_db
+    yield adocument_db
     # Cleanup after tests
-    document_db.delete_index()
+    adocument_db.delete_index()
 
 
 def test_upserting_same_content(
-    document_db: DocumentDB, docs: List[Document], sub_docs_chunk: List[Document]
+    document_db: MultiVectorDocumentDB,
+    docs: List[Document],
+    sub_docs_chunk: List[Document],
 ) -> None:
     """Upserting some content to confirm it gets added only once."""
     assert document_db.upsert_documents(docs) == {
@@ -158,13 +147,13 @@ def test_upserting_same_content(
             document_db.vectorstore.docstore.yield_keys()
         )
     ) == total_len(docs)
-    assert len(list(document_db.vectorstore.vectorstore.store)) == len(sub_docs_chunk)
-    assert total_len(
-        list(document_db.vectorstore.vectorstore.store.values())
-    ) == total_len(sub_docs_chunk)
+    assert len(document_db.vectorstore.vectorstore.store) == len(sub_docs_chunk)
+    assert total_len(document_db.vectorstore.vectorstore.store.values()) == total_len(
+        sub_docs_chunk
+    )
 
     for doc in docs:
-        doc.metadata.pop("doc_id")
+        doc.metadata.pop("id")
 
     # Insert the same content again, verify it doesn't get added again
     assert document_db.upsert_documents(docs) == {
@@ -178,7 +167,9 @@ def test_upserting_same_content(
 @pytest.mark.requires("aiosqlite")
 @pytest.mark.asyncio
 async def test_aupserting_same_content(
-    adocument_db: DocumentDB, docs: List[Document], sub_docs_chunk: List[Document]
+    adocument_db: MultiVectorDocumentDB,
+    docs: List[Document],
+    sub_docs_chunk: List[Document],
 ) -> None:
     """Upserting some content to confirm it gets added only once."""
     assert await adocument_db.aupsert_documents(docs) == {
@@ -204,7 +195,7 @@ async def test_aupserting_same_content(
     ) == total_len(sub_docs_chunk)
 
     for doc in docs:
-        doc.metadata.pop("doc_id")
+        doc.metadata.pop("id")
 
     # Insert the same content again, verify it doesn't get added again
     assert await adocument_db.aupsert_documents(docs) == {
@@ -216,7 +207,7 @@ async def test_aupserting_same_content(
 
 
 def test_upserting_deletes(
-    document_db: DocumentDB, docs: List[Document], docs_per_source: Dict
+    document_db: MultiVectorDocumentDB, docs: List[Document], docs_per_source: Dict
 ) -> None:
     """Test upserting updated documents results in deletion."""
     assert document_db.upsert_documents(docs) == {
@@ -227,9 +218,10 @@ def test_upserting_deletes(
     }
 
     for doc in docs:
-        doc.metadata.pop("doc_id")
+        print(doc.metadata)
+        doc.metadata.pop("id")
 
-    # Keep 1document and create 2 documents from the same source all with mutated content
+    # Keep 1 document and create 2 documents from the same source all with mutated content
     docs2 = [
         docs[0],
         Document(
@@ -254,7 +246,7 @@ def test_upserting_deletes(
 @pytest.mark.requires("aiosqlite")
 @pytest.mark.asyncio
 async def test_aupserting_deletes(
-    adocument_db: DocumentDB, docs: List[Document], docs_per_source: Dict
+    adocument_db: MultiVectorDocumentDB, docs: List[Document], docs_per_source: Dict
 ) -> None:
     """Test upserting updated documents results in deletion."""
     assert await adocument_db.aupsert_documents(docs) == {
@@ -265,7 +257,7 @@ async def test_aupserting_deletes(
     }
 
     for doc in docs:
-        doc.metadata.pop("doc_id")
+        doc.metadata.pop("id")
 
     # Keep 1document and create 2 documents from the same source all with mutated content
     docs2 = [
@@ -289,12 +281,13 @@ async def test_aupserting_deletes(
     }
 
 
-def test_deduplication(document_db: DocumentDB, docs: List[Document]) -> None:
+def test_deduplication(
+    document_db: MultiVectorDocumentDB, docs: List[Document]
+) -> None:
     """Check that duplicates are not added."""
     more_docs = docs + [docs[0]]
 
     # Should result in only a single copy of each document being added
-    print(len(docs))
     assert document_db.upsert_documents(more_docs) == {
         "num_added": len(docs),
         "num_deleted": 0,
@@ -305,12 +298,13 @@ def test_deduplication(document_db: DocumentDB, docs: List[Document]) -> None:
 
 @pytest.mark.requires("aiosqlite")
 @pytest.mark.asyncio
-async def test_adeduplication(adocument_db: DocumentDB, docs: List[Document]) -> None:
+async def test_adeduplication(
+    adocument_db: MultiVectorDocumentDB, docs: List[Document]
+) -> None:
     """Check that duplicates are not added."""
     more_docs = docs + [docs[0]]
 
     # Should result in only a single copy of each document being added
-    print(len(docs))
     assert await adocument_db.aupsert_documents(more_docs) == {
         "num_added": len(docs),
         "num_deleted": 0,
@@ -320,7 +314,7 @@ async def test_adeduplication(adocument_db: DocumentDB, docs: List[Document]) ->
 
 
 def test_delete(
-    document_db: DocumentDB, docs: List[Document], docs_per_source: Dict
+    document_db: MultiVectorDocumentDB, docs: List[Document], docs_per_source: Dict
 ) -> None:
     """Test that the delete method functions as expected."""
     assert document_db.upsert_documents(docs) == {
@@ -351,7 +345,7 @@ def test_delete(
 @pytest.mark.requires("aiosqlite")
 @pytest.mark.asyncio
 async def test_adelete(
-    adocument_db: DocumentDB, docs: List[Document], docs_per_source: Dict
+    adocument_db: MultiVectorDocumentDB, docs: List[Document], docs_per_source: Dict
 ) -> None:
     """Test that the delete method functions as expected."""
     assert await adocument_db.aupsert_documents(docs) == {
