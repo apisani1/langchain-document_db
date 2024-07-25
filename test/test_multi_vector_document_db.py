@@ -6,28 +6,22 @@ from dotenv import (
 
 load_dotenv(find_dotenv(), override=True)
 
-from datetime import datetime
 import tempfile
 from typing import (
     AsyncGenerator,
+    Dict,
     Generator,
     List,
-    Dict,
 )
 
-from unittest.mock import patch
 import pytest
 import pytest_asyncio
 
-from langchain_core.document_loaders import BaseLoader
 from langchain_core.documents import Document
 
-from multi_vector_document_db import MultiVectorDocumentDB
 from load_document import load_document
-from multi_vectorstore import (
-    MultiVectorStore,
-    _chunk,
-)
+from multi_vector_document_db import MultiVectorDocumentDB
+from multi_vectorstore import _chunk
 from test_document_db import InMemoryVectorStore
 
 
