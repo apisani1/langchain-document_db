@@ -106,7 +106,7 @@ def document_db() -> Generator[MultiVectorDocumentDB, None, None]:
     """Document DB fixture."""
     # Create a temporary directory for the test database
     temp_dir = tempfile.mkdtemp()
-    document_db = MultiVectorDocumentDB(
+    document_db = MultiVectorDocumentDB.create(
         location=temp_dir,
         vectorstore=InMemoryVectorStore(),
         db_url="sqlite:///:memory:",
@@ -126,7 +126,7 @@ def db_with_search() -> Generator[MultiVectorDocumentDB, None, None]:
     """Document DB fixture."""
     # Create a temporary directory for the test database
     temp_dir = tempfile.mkdtemp()
-    document_db = MultiVectorDocumentDB(
+    document_db = MultiVectorDocumentDB.create(
         location=temp_dir,
         vectorstore=Chroma(embedding_function=EMBEDDINGS),
         db_url="sqlite:///:memory:",
@@ -146,7 +146,7 @@ async def adocument_db() -> AsyncGenerator[MultiVectorDocumentDB, None]:
     """Async Document DB fixture."""
     # Create a temporary directory for the test database
     temp_dir = tempfile.mkdtemp()
-    adocument_db = await MultiVectorDocumentDB.ainit(
+    adocument_db = await MultiVectorDocumentDB.acreate(
         location=temp_dir,
         vectorstore=InMemoryVectorStore(),
         db_url="sqlite+aiosqlite:///:memory:",
@@ -166,7 +166,7 @@ async def adb_with_search() -> AsyncGenerator[MultiVectorDocumentDB, None]:
     """Async Document DB fixture."""
     # Create a temporary directory for the test database
     temp_dir = tempfile.mkdtemp()
-    adocument_db = await MultiVectorDocumentDB.ainit(
+    adocument_db = await MultiVectorDocumentDB.acreate(
         location=temp_dir,
         vectorstore=Chroma(embedding_function=EMBEDDINGS),
         db_url="sqlite+aiosqlite:///:memory:",

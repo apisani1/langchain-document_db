@@ -148,7 +148,7 @@ def document_db() -> Generator[DocumentDB, None, None]:
     """Document DB fixture."""
     # Create a temporary directory for the test database
     temp_dir = tempfile.mkdtemp()
-    document_db = DocumentDB(
+    document_db = DocumentDB.create(
         location=temp_dir,
         vectorstore=InMemoryVectorStore(),
         db_url="sqlite:///:memory:",
@@ -163,7 +163,7 @@ async def adocument_db() -> AsyncGenerator[DocumentDB, None]:
     """Async Document DB fixture."""
     # Create a temporary directory for the test database
     temp_dir = tempfile.mkdtemp()
-    document_db = await DocumentDB.ainit(
+    document_db = await DocumentDB.acreate(
         location=temp_dir,
         vectorstore=InMemoryVectorStore(),
         db_url="sqlite+aiosqlite:///:memory:",
