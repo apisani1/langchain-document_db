@@ -160,7 +160,7 @@ def document_db() -> Generator[DocumentDB, None, None]:
 
 @pytest_asyncio.fixture
 async def adocument_db() -> AsyncGenerator[DocumentDB, None]:
-    """Document DB fixture."""
+    """Async Document DB fixture."""
     # Create a temporary directory for the test database
     temp_dir = tempfile.mkdtemp()
     document_db = await DocumentDB.ainit(

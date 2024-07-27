@@ -96,8 +96,17 @@ def _generate_questions(
 
 class MultiVectorStore(VectorStore):
     """
+    This class lets you create multiple vectors per document. There are multiple use cases where this is beneficial.
+    LangChain has a base MultiVectorRetriever which makes querying this type of setup easy.
+    The methods to create multiple vectors per document include:
+        -Smaller chunks: split a document into smaller chunks, and embed those.
+        -Summary: create a summary for each document, embed that along with (or instead of) the document.
+        -Hypothetical questions: create hypothetical questions that each document would be appropriate to answer,
+                                 embed those along with (or instead of) the document.
+        -Custom: use a custom function to transform the document into multiple documents, embed those.
+
     Args:
-        vectorstore (VectorStore): VectorStore to use to store generated child documents.
+        vectorstore (VectorStore): VectorStore to use to store generated child documents and their embeddings.
         byte_store (ByteStore, optional): ByteStore to store the parent documents. Defaults to None.
         docstore (BaseStore[str, Document], optional): Docstore to store the parent documents. Defaults to None.
             If both `byte_store` and `docstore` are provided, `byte_store` will be used.
@@ -113,8 +122,7 @@ class MultiVectorStore(VectorStore):
             exception will be raised.
         max_retries (int, optional): Maximum number of retries to use when failing to transform douments.
             Defaults to 0.
-        add_originals (bool): Whether to also add the parent documents to the vectorstore.
-            Defaults to False.
+        add_originals (bool): Whether to also add the parent documents to the vectorstore.nDefaults to False.
         search_kwargs (dict, optional): Keyword arguments to pass to the MultiVectorRetriever.
         search_type (SearchType): Type of search to perform when using the retriever. Defaults to similarity.
         kwargs: Additional kwargs to pass to the MultiVectorRetriever.
