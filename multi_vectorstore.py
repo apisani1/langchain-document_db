@@ -104,6 +104,8 @@ class MultiVectorStore(VectorStore):
         -Hypothetical questions: create hypothetical questions that each document would be appropriate to answer,
                                  embed those along with (or instead of) the document.
         -Custom: use a custom function to transform the document into multiple documents, embed those.
+    This allows the retriever to use the child document embeddings for the search for the best match, but then return
+    the parent documents that have more content.
 
     Args:
         vectorstore (VectorStore): VectorStore to use to store generated child documents and their embeddings.
