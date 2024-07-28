@@ -249,8 +249,7 @@ class MultiVectorStore(VectorStore):
                     - List[Tuple]: List of functors and their keyword arguments. If a functor does not require keyword
                                    arguments, the functor can be passed instead of a tuple.
                 Defaults to "chunk".
-            func_kwargs (dict, optional): Keyword arguments to pass to the transformation function.
-                Defaults to {}.
+            func_kwargs (dict, optional): Keyword arguments to pass to the transformation function. Defaults to {}.
             llm (BaseLanguageModel, optional): Language model to use for the transformation function of the parent
                 documents. Defaults to None. If there is no language model provided and the transformation function
                 rquires a LLM, an exception will be raised.
@@ -284,7 +283,7 @@ class MultiVectorStore(VectorStore):
     @classmethod
     def _expand_func_list(
         cls, func_list: List[Union[str, Callable, Tuple[Union[str, Callable], Dict]]]
-    ) -> list[Union[str, Callable]]:
+    ) -> List[Tuple[Union[str, Callable], Dict]]:
         if not func_list:
             return []
         func = func_list[0]
@@ -338,11 +337,10 @@ class MultiVectorStore(VectorStore):
 
         Args:
             search_type (str, optional): Defines the type of search tha the Retriever should perform.
-                Can be "similarity" (default), "mmr", or "similarity_score_threshold".
+                Can be "similarity" (default) or "mmr".
             search_kwargs (dict, optional): Keyword arguments to pass to the search function.
                 Can include the following:
                     k: Amount of documents to return (defaults to 4)
-                    score_threshold: Minimum relevance threshold for similarity_score_threshold
                     fetch_k: Amount of documents to pass to MMR algorithm (defaults to 20)
                     lambda_mult: Diversity of results returned by MMR; 1 for minimum diversity and 0 for maximum.
                         defaults to 0.5.
@@ -461,10 +459,18 @@ class MultiVectorStore(VectorStore):
         Args:
             documents (Iterable[Document]: Parent documents to process and generate child documents to be
                 added to the vectorstore.
-            functor (str | Callable, optional): Function to transform a parent document into child documents.
-                Defaults to the function selected at the initialization of the class instance.
+            functor: Function to transform the parent document into child documents.
+                Possible values include:
+                    - "chunk": Split the parent document into smaller chunks.
+                    - "summary": Create a summary for the parent document.
+                    - "question": Create hypothetical questions for the parent document.
+                    - Callable: Custom function to transform the parent document into child documents. It must have the
+                                signature `func(doc: Document, metadata: dict, **kwargs: Any) -> list[Document]`.
+                    - List[Tuple]: List of functors and their keyword arguments. If a functor does not require keyword
+                                   arguments, the functor can be passed instead of a tuple.
+                Defaults to the function(s) selected at the initialization of the class instance.
             func_kwargs (dict, optional): Keyword arguments to pass to the transformation function.
-                Defaults to the keyword arguments selected at the initialization of the class instance.
+                         Defaults to the keyword arguments selected at the initialization of the class instance.
             llm (BaseLanguageModel, optional): Language model to use for the transformation function.
                 Defaults to None. If there is no language model provided and the transformation function rquires a LLM,
                 an exception will be raised.
@@ -530,10 +536,18 @@ class MultiVectorStore(VectorStore):
         Args:
             documents (Iterable[Document]: Parent documents to process and generate child documents to be
                 added to the vectorstore.
-            functor (str | Callable, optional): Function to transform a parent document into child documents.
-                Defaults to the function selected at the initialization of the class instance.
+            functor: Function to transform the parent document into child documents.
+                Possible values include:
+                    - "chunk": Split the parent document into smaller chunks.
+                    - "summary": Create a summary for the parent document.
+                    - "question": Create hypothetical questions for the parent document.
+                    - Callable: Custom function to transform the parent document into child documents. It must have the
+                                signature `func(doc: Document, metadata: dict, **kwargs: Any) -> list[Document]`.
+                    - List[Tuple]: List of functors and their keyword arguments. If a functor does not require keyword
+                                   arguments, the functor can be passed instead of a tuple.
+                Defaults to the function(s) selected at the initialization of the class instance.
             func_kwargs (dict, optional): Keyword arguments to pass to the transformation function.
-                Defaults to the keyword arguments selected at the initialization of the class instance.
+                         Defaults to the keyword arguments selected at the initialization of the class instance.
             llm (BaseLanguageModel, optional): Language model to use for the transformation function.
                 Defaults to None. If there is no language model provided and the transformation function rquires a LLM,
                 an exception will be raised.
