@@ -18,6 +18,10 @@ from langchain_core.stores import BaseStore
 
 
 class NillStore(BaseStore[str, Document]):
+    """
+    A dummy document store that does not store any documents.
+    """
+
     def mget(self, keys: Sequence[str]) -> List[Optional[Document]]:
         return [None] * len(keys)
 
@@ -48,12 +52,12 @@ class CachedDocStore(BaseStore[str, Document]):
         redis_client (optional): A Redis connection instance. If not provided, a new connection will be created.
             Defaults to `None`
         redis_url (str, optional): redis url to create a new connection if no redis_client is provided. If not provided,
-            it looks for the environmt variable REDIS_URI. if the environment variable is not found it tries to connect
+            it looks for the environmt variable REDIS_URI. if the environment variable is not found, it tries to connect
             to a local using redis://localhost:6379. Defaults to `None`
         client_kwargs (dic, optional): Keyword arguments to pass to the Redis client
         ttl (int, optional): time to expire keys in seconds if provided, if None keys will never expire.
             Defaults to `None`
-        prefix (str, optional): if provided, all keys will be prefixed with this prefix. Defaults to None.
+        namespace (str, optional): if provided, all keys will be prefixed with this namespace. Defaults to None.
 
     """
     def __init__(
@@ -68,7 +72,7 @@ class CachedDocStore(BaseStore[str, Document]):
         redis_url: Optional[str] = None,
         client_kwargs: Optional[dict] = None,
         ttl: Optional[int] = None,
-        prefix: Optional[str] = None,
+        namespace: Optional[str] = None,
     ):
         self.root_path = root_path if root_path else "./.docstore"
         self.update_atime = update_atime
@@ -91,10 +95,10 @@ class CachedDocStore(BaseStore[str, Document]):
             )
         else:
             self.redis_store = NillStore()
-        self.prefix = prefix + "/" if prefix else ""
+        self.namespace = namespace + "/" if namespace else ""
 
     def _get_full_path(self, key: str) -> Path:
-        pkey = self.prefix + key
+        pkey = self.namespace + key
         return self.file_store._get_full_path(pkey)
 
     def mget(self, keys: Sequence[str]) -> list[Optional[Document]]:
@@ -109,7 +113,7 @@ class CachedDocStore(BaseStore[str, Document]):
         """
         docs: list[Optional[Document]] = []
         for key in keys:
-            pkey = self.prefix + key
+            pkey = self.namespace + key
             value = self.redis_store.mget([pkey])[0]
             if not value or self.update_atime:
                 value = self.file_store.mget([pkey])[0]
@@ -126,7 +130,7 @@ class CachedDocStore(BaseStore[str, Document]):
             key_doc_pairs (Sequence[tuple[str, Document]]): A sequence of key-document pairs.
         """
         for key, doc in key_doc_pairs:
-            pkey = self.prefix + key
+            pkey = self.namespace + key
             value = pickle.dumps(doc)
             self.file_store.mset([(pkey, value)])
             self.redis_store.mset([(pkey, value)])
@@ -137,7 +141,7 @@ class CachedDocStore(BaseStore[str, Document]):
         Args:
             keys (Sequence[str]): A sequence of keys to delete.
         """
-        pkeys = [self.prefix + key for key in keys]
+        pkeys = [self.namespace + key for key in keys]
         self.file_store.mdelete(pkeys)
         self.redis_store.mdelete(pkeys)
 
@@ -150,7 +154,7 @@ class CachedDocStore(BaseStore[str, Document]):
         Yields:
             Iterator[str]: An iterator over keys that match the given prefix.
         """
-        prefix = self.prefix + prefix if prefix else self.prefix
+        prefix = self.namespace + prefix if prefix else self.namespace
         for pkey in self.file_store.yield_keys(prefix=prefix):
-            key = pkey.replace(self.prefix, "", 1)
+            key = pkey.replace(self.namespace, "", 1)
             yield key

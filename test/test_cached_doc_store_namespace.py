@@ -28,7 +28,7 @@ def doc_store() -> Generator[CachedDocStore, None, None]:
     # Create a temporary directory for testing
     with tempfile.TemporaryDirectory() as temp_dir:
         # Instantiate the CachedDocStore with the temporary directory as the root path
-        store = CachedDocStore(temp_dir, cached=False, prefix="test")
+        store = CachedDocStore(temp_dir, cached=False, namespace="test")
         yield store
 
 
@@ -37,7 +37,7 @@ def cached_doc_store() -> Generator[CachedDocStore, None, None]:
     # Create a temporary directory for testing
     with tempfile.TemporaryDirectory() as temp_dir:
         # Instantiate the CachedDocStore with the temporary directory as the root path
-        store = CachedDocStore(temp_dir, cached=True, prefix="test")
+        store = CachedDocStore(temp_dir, cached=True, namespace="test")
         yield store
 
 
@@ -105,7 +105,7 @@ def test_mset_chmod(chmod_dir_s: str, chmod_file_s: str) -> None:
         # as the root path
         temp_dir = os.path.join(temp_dir, "store_dir")
         doc_store = CachedDocStore(
-            temp_dir, cached=False, prefix="test", chmod_dir=chmod_dir, chmod_file=chmod_file
+            temp_dir, cached=False, namespace="test", chmod_dir=chmod_dir, chmod_file=chmod_file
         )
 
         # Set values for keys
@@ -133,7 +133,7 @@ def test_mset_chmod_cached(chmod_dir_s: str, chmod_file_s: str) -> None:
         # as the root path
         temp_dir = os.path.join(temp_dir, "store_dir")
         cached_doc_store = CachedDocStore(
-            temp_dir, cached=True, prefix="test", chmod_dir=chmod_dir, chmod_file=chmod_file
+            temp_dir, cached=True, namespace="test", chmod_dir=chmod_dir, chmod_file=chmod_file
         )
 
         # Set values for keys
@@ -154,7 +154,7 @@ def test_mget_update_atime() -> None:
         # Instantiate the CachedDocStore with a directory inside the temporary directory
         # as the root path
         temp_dir = os.path.join(temp_dir, "store_dir")
-        doc_store = CachedDocStore(temp_dir, cached=False, prefix="test", update_atime=True)
+        doc_store = CachedDocStore(temp_dir, cached=False, namespace="test", update_atime=True)
 
         # Set values for keys
         key_value_pairs = [("key1", doc1), ("key2", doc2)]
@@ -179,7 +179,7 @@ def test_mget_update_atime_cached() -> None:
         # Instantiate the CachedDocStore with a directory inside the temporary directory
         # as the root path
         temp_dir = os.path.join(temp_dir, "store_dir")
-        cached_doc_store = CachedDocStore(temp_dir, cached=True, prefix="test", update_atime=True)
+        cached_doc_store = CachedDocStore(temp_dir, cached=True, namespace="test", update_atime=True)
 
         # Set values for keys
         key_value_pairs = [("key1", doc1), ("key2", doc2)]
@@ -300,7 +300,7 @@ def test_yield_keys_cached(cached_doc_store: CachedDocStore) -> None:
 
 def test_redis_mget(redis_client: Redis) -> None:
     """Test mget method."""
-    store = CachedDocStore(cached=True, prefix="test", redis_client=redis_client, ttl=None)
+    store = CachedDocStore(cached=True, namespace="test", redis_client=redis_client, ttl=None)
     keys = ["key1", "key2"]
     redis_client.mset({"test/key1": pickle.dumps(doc1), "test/key2": pickle.dumps(doc2)})
     result = store.mget(keys)
@@ -309,7 +309,7 @@ def test_redis_mget(redis_client: Redis) -> None:
 
 def test_redis_mset(redis_client: Redis) -> None:
     """Test that multiple keys can be set."""
-    store = CachedDocStore(cached=True, prefix="test", redis_client=redis_client, ttl=None)
+    store = CachedDocStore(cached=True, namespace="test", redis_client=redis_client, ttl=None)
     key_value_pairs = [("key1", doc1), ("key2", doc2)]
     store.mset(key_value_pairs)
     result = [pickle.loads(raw) for raw in redis_client.mget(["test/key1", "test/key2"])]
@@ -318,7 +318,7 @@ def test_redis_mset(redis_client: Redis) -> None:
 
 def test_redis_mdelete(redis_client: Redis) -> None:
     """Test that deletion works as expected."""
-    store = CachedDocStore(cached=True, prefix="test", redis_client=redis_client, ttl=None)
+    store = CachedDocStore(cached=True, namespace="test", redis_client=redis_client, ttl=None)
     keys = ["key1", "key2"]
     redis_client.mset({"test/key1": pickle.dumps(doc1), "test/key2": pickle.dumps(doc2)})
     store.mdelete(keys)

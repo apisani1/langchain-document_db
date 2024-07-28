@@ -35,6 +35,16 @@ from ids_db_sql import IDsDB
 
 
 def load_question_chain(llm: BaseLanguageModel) -> Chain:
+    """
+    Load a chain for generating hypothetical questions from a document. The chain uses the variables `doc` and `q` to
+    generate questions. The `q` variable is the number of questions to generate.
+
+    Args:
+        llm (BaseLanguageModel): Language model to use for generating questions.
+
+    Returns:
+        Chain: Chain for generating hypothetical questions.
+    """
     functions = [
         {
             "name": "hypothetical_questions",
@@ -73,11 +83,33 @@ def load_question_chain(llm: BaseLanguageModel) -> Chain:
     return chain
 
 
-def _chunk(doc: Document, metadata: dict, **kwargs: Any) -> Document:
+def _chunk(doc: Document, metadata: dict, **kwargs: Any) -> List[Document]:
+    """
+    Chunk a document into smaller documents.
+
+    Args:
+        doc (Document): Document to chunk.
+        metadata (dict): Metadata to add to the chunks.
+        **kwargs: Additional keyword arguments for the text splitter.
+
+    Returns:
+        list[Document]: Chunked document.
+    """
     return chunk_docs([doc], metadata=metadata, **kwargs)
 
 
-def _sumarize(doc: Document, metadata: dict, chain: Chain) -> Document:
+def _sumarize(doc: Document, metadata: dict, chain: Chain) -> List[Document]:
+    """
+    Summarize a document using a language model. The chain uses the variables `doc` to generate a summary.
+
+    Args:
+        doc (Document): Document to summarize.
+        metadata (dict): Metadata to add to the summary.
+        chain (Chain): Chain to use for summarization.
+
+    Returns:
+        list[Document]: Summarized document.
+    """
     return [
         Document(page_content=chain.invoke([doc])["output_text"], metadata=metadata)
     ]
@@ -86,6 +118,19 @@ def _sumarize(doc: Document, metadata: dict, chain: Chain) -> Document:
 def _generate_questions(
     doc: Document, metadata: dict, chain: Chain, q: int = 5
 ) -> list[Document]:
+    """
+    Generate hypothetical questions for a document using a language model. The chain uses the variables `doc` and
+    `q` to generate questions. The `q` variable is the number of questions to generate.
+
+    Args:
+        doc (Document): Document to generate questions for.
+        metadata (dict): Metadata to add to the questions.
+        chain (Chain): Chain to use for generating questions.
+        q (int, optional): Number of questions to generate. Defaults to 5.
+
+    Returns:
+        list[Document]: Hypothetical questions.
+    """
     questions = chain.invoke({"doc": doc, "q": q})
     return [
         Document(page_content=question, metadata=metadata)
@@ -115,8 +160,16 @@ class MultiVectorStore(VectorStore):
             If neither `byte_store` nor `docstore` is provided, an `InMemoryStore` will be used.
         id_key (str, optional): Key to use to identify the parent documents. Defaults to "doc_id".
         child_id_key (str, optional): Key to use to identify the child document. Defaults to "child_ids".
-        functor (str | Callable, optional): Function to transform the parent document into the child documents.
-            Defaults to chunking the parent documents into smaller chunks.
+        functor: Function to transform the parent document into the child documents.
+            Possible values include:
+                - "chunk": Split the parent document into smaller chunks.
+                - "summary": Create a summary for the parent document.
+                - "question": Create hypothetical questions for the parent document.
+                - Callable: Custom function to transform the parent document into child documents. It must have the
+                            signature `func(doc: Document, metadata: dict, **kwargs: Any) -> list[Document]`.
+                - List[Tuple]: List of functors and their keyword arguments. If a functor does not require keyword
+                               arguments, the functor can be passed instead of a tuple.
+            Defaults to "chunk".
         func_kwargs (dict, optional): Keyword arguments to pass to the transformation function.
             Defaults to {"chunk_size": 500, "chunk_overlap": 50}.
         llm (BaseLanguageModel, optional): Language model to use for the transformation function of the parent documents.
@@ -124,7 +177,7 @@ class MultiVectorStore(VectorStore):
             exception will be raised.
         max_retries (int, optional): Maximum number of retries to use when failing to transform douments.
             Defaults to 0.
-        add_originals (bool): Whether to also add the parent documents to the vectorstore.nDefaults to False.
+        add_originals (bool): Whether to also add the parent documents to the vectorstore. Defaults to False.
         search_kwargs (dict, optional): Keyword arguments to pass to the MultiVectorRetriever.
         search_type (SearchType): Type of search to perform when using the retriever. Defaults to similarity.
         kwargs: Additional kwargs to pass to the MultiVectorRetriever.
@@ -133,6 +186,7 @@ class MultiVectorStore(VectorStore):
     def __init__(
         self,
         vectorstore: VectorStore,
+        *,
         byte_store: Optional[ByteStore] = None,
         docstore: Optional[BaseStore[str, Document]] = None,
         ids_db_path: str = "",
@@ -181,6 +235,28 @@ class MultiVectorStore(VectorStore):
         llm: Optional[BaseLanguageModel] = None,
         max_retries: Optional[int] = None,
     ) -> None:
+        """
+        Set the transformation function for the parent documents into child documents.
+
+        Args:
+            functor: Function to transform the parent document into child documents.
+                Possible values include:
+                    - "chunk": Split the parent document into smaller chunks.
+                    - "summary": Create a summary for the parent document.
+                    - "question": Create hypothetical questions for the parent document.
+                    - Callable: Custom function to transform the parent document into child documents. It must have the
+                                signature `func(doc: Document, metadata: dict, **kwargs: Any) -> list[Document]`.
+                    - List[Tuple]: List of functors and their keyword arguments. If a functor does not require keyword
+                                   arguments, the functor can be passed instead of a tuple.
+                Defaults to "chunk".
+            func_kwargs (dict, optional): Keyword arguments to pass to the transformation function.
+                Defaults to {}.
+            llm (BaseLanguageModel, optional): Language model to use for the transformation function of the parent
+                documents. Defaults to None. If there is no language model provided and the transformation function
+                rquires a LLM, an exception will be raised.
+            max_retries (int, optional): Maximum number of retries to use when failing to transform douments.
+                Defaults to 0.
+        """
         self.func_list = self._get_func_list(functor, func_kwargs, llm)
         if max_retries is not None:
             self.max_retries = max_retries
@@ -242,7 +318,7 @@ class MultiVectorStore(VectorStore):
                     func_kwargs.update({"chain": chain})
                     return _generate_questions, func_kwargs
                 case "none":
-                    return None, None
+                    return None, {}
                 case _:
                     pass
         raise ValueError("Bad functor for MultiVectorStore")
