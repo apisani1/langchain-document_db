@@ -14,7 +14,7 @@ from tenacity import (
     wait_random_exponential,
 )
 
-from text_splitter import chunkable
+from .text_splitter import chunkable
 
 
 def do_retry(
@@ -112,7 +112,7 @@ def load_from_web(web_path: str, *args: Any, **kwargs: Any) -> list[Document]:
     Returns:
      List of Langchain documents or None if an error was encountered.
     """
-    from langchain.document_loaders import WebBaseLoader
+    from langchain_community.document_loaders import WebBaseLoader
 
     loader = WebBaseLoader(web_path, *args, **kwargs)
     return loader.load()
@@ -134,8 +134,8 @@ def load_with_chromium(
         List of Langchain documents or None if an error was encountered.
     """
     import nest_asyncio
-    from langchain.document_loaders import AsyncChromiumLoader
-    from langchain.document_transformers import BeautifulSoupTransformer
+    from langchain_community.document_loaders import AsyncChromiumLoader
+    from langchain_community.document_transformers import BeautifulSoupTransformer
 
     nest_asyncio.apply()
     if not isinstance(web_paths, list):

@@ -12,7 +12,7 @@ from langchain_community.document_loaders.base import (
     BaseLoader,
 )
 
-from text_splitter import chunkable
+from .text_splitter import chunkable
 
 
 def load_all_documents_lazy(
@@ -148,5 +148,6 @@ class LoadAllDocuments(BaseLoader):
         for doc in load_all_documents_lazy(*self.args, **self.kwargs):
             yield doc
 
+    @chunkable
     def load(self) -> list[Document]:
         return load_all_documents(*self.args, **self.kwargs)

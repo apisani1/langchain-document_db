@@ -30,7 +30,7 @@ from langchain_core.stores import (
     ByteStore,
 )
 
-from text_splitter import chunk_docs
+from document_loaders.text_splitter import chunk_docs
 from ids_db_sql import IDsDB
 
 

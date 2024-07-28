@@ -18,11 +18,11 @@ import pytest
 import pytest_asyncio
 from scipy.spatial import distance
 
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 
-from load_document import load_document
+from document_loaders.load_document import load_document
 from multi_vector_document_db import MultiVectorDocumentDB
 from multi_vectorstore import _chunk
 from test_document_db import InMemoryVectorStore
@@ -128,7 +128,7 @@ def db_with_search() -> Generator[MultiVectorDocumentDB, None, None]:
     temp_dir = tempfile.mkdtemp()
     document_db = MultiVectorDocumentDB.create(
         location=temp_dir,
-        vectorstore=Chroma(embedding_function=EMBEDDINGS),
+        vectorstore=Chroma(embedding_function=EMBEDDINGS, persist_directory=temp_dir),
         db_url="sqlite:///:memory:",
         functor="chunk",
         func_kwargs={
@@ -168,7 +168,7 @@ async def adb_with_search() -> AsyncGenerator[MultiVectorDocumentDB, None]:
     temp_dir = tempfile.mkdtemp()
     adocument_db = await MultiVectorDocumentDB.acreate(
         location=temp_dir,
-        vectorstore=Chroma(embedding_function=EMBEDDINGS),
+        vectorstore=Chroma(embedding_function=EMBEDDINGS, persist_directory=temp_dir),
         db_url="sqlite+aiosqlite:///:memory:",
         functor="chunk",
         func_kwargs={

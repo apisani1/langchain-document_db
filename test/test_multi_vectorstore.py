@@ -6,7 +6,7 @@ from dotenv import (
 
 load_dotenv(find_dotenv(), override=True)
 
-import os
+import shutil
 import tempfile
 from typing import (
     Generator,
@@ -19,13 +19,13 @@ from scipy.spatial import distance
 from langchain.globals import set_llm_cache
 from langchain_core.stores import InMemoryStore, InMemoryBaseStore
 from langchain_community.cache import InMemoryCache
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_openai import (
     ChatOpenAI,
     OpenAIEmbeddings,
 )
-from load_document import load_document
+from document_loaders.load_document import load_document
 from multi_vectorstore import (
     MultiVectorStore,
     _chunk,
@@ -125,8 +125,7 @@ def multi_vectorstore() -> Generator[MultiVectorStore, None, None]:
     yield multi_vectorstore
 
     # Cleanup after tests
-    os.remove(os.path.join(temp_dir, "ids_db.sqlite"))
-    os.rmdir(temp_dir)
+    shutil.rmtree(temp_dir)
 
 
 @pytest.fixture(scope="function")
@@ -136,46 +135,15 @@ def multi_vectorstore_with_search() -> Generator[MultiVectorStore, None, None]:
     temp_dir = tempfile.mkdtemp()
 
     multi_vectorstore = MultiVectorStore(
-        vectorstore=Chroma(embedding_function=EMBEDDINGS),
+        vectorstore=Chroma(embedding_function=EMBEDDINGS, persist_directory=temp_dir),
         docstore=InMemoryStore(),
         ids_db_path=temp_dir,
     )
     yield multi_vectorstore
 
     # Cleanup after tests
-    os.remove(os.path.join(temp_dir, "ids_db.sqlite"))
-    os.rmdir(temp_dir)
-
-
-def test_retriever(
-    multi_vectorstore_with_search: MultiVectorStore,
-    docs: List[Document],
-    sub_docs_distances: List[float],
-) -> None:
-    """Test the retriever for the MultiVectorStore."""
-    # Insert the parente documents and generate the child documents
-    multi_vectorstore_with_search.add_documents(
-        docs, functor="chunk", func_kwargs={"chunk_size": SMALL_CHUNK_SIZE}
-    )
-
-    # Retrive the parent document of the most similar child document in comparison with the query
-    retriever = multi_vectorstore_with_search.as_retriever(search_kwargs={"k": 1})
-    results = retriever.invoke(QUERY)
-
-    # Since we only searched for one child, the retriver should return only one parent document
-    assert len(results) == 1
-
-    # Generate child focuments for the parent document retrieved
-    sub_docs = chunk(results[0], chunk_size=SMALL_CHUNK_SIZE)
-
-    # Make sure that the most similar child document is one of the child documents generated
-    for sub_doc in sub_docs:
-        dist = distance.euclidean(
-            EMBEDDINGS.embed_query(sub_doc.page_content), EMBEDDED_QUERY
-        )
-        if dist == pytest.approx(sub_docs_distances[0], abs=1e-3):
-            return
-    assert False
+    multi_vectorstore.vectorstore.delete_collection()
+    shutil.rmtree(temp_dir)
 
 
 def test_add_documents_chunk(
@@ -357,7 +325,7 @@ def test_add_documents_multiple(
     ]
     ids = multi_vectorstore.add_documents(docs, functor=func_list, llm=LLM)
 
-     # using in memory implementation here
+    # using in memory implementation here
     assert isinstance(multi_vectorstore.docstore, InMemoryBaseStore)
     assert isinstance(multi_vectorstore.vectorstore, InMemoryVectorStore)
 
@@ -491,3 +459,34 @@ async def test_asimilarity_search(
         assert dist == pytest.approx(
             sub_docs_distances[0], abs=1e-3
         ) or dist == pytest.approx(sub_docs_distances[1], abs=1e-3)
+
+
+def test_retriever(
+    multi_vectorstore_with_search: MultiVectorStore,
+    docs: List[Document],
+    sub_docs_distances: List[float],
+) -> None:
+    """Test the retriever for the MultiVectorStore."""
+    # Insert the parente documents and generate the child documents
+    multi_vectorstore_with_search.add_documents(
+        docs, functor="chunk", func_kwargs={"chunk_size": SMALL_CHUNK_SIZE}
+    )
+
+    # Retrive the parent document of the most similar child document in comparison with the query
+    retriever = multi_vectorstore_with_search.as_retriever(search_kwargs={"k": 1})
+    results = retriever.invoke(QUERY)
+
+    # Since we only searched for one child, the retriver should return only one parent document
+    assert len(results) == 1
+
+    # Generate child focuments for the parent document retrieved
+    sub_docs = chunk(results[0], chunk_size=SMALL_CHUNK_SIZE)
+
+    # Make sure that the most similar child document is one of the child documents generated
+    for sub_doc in sub_docs:
+        dist = distance.euclidean(
+            EMBEDDINGS.embed_query(sub_doc.page_content), EMBEDDED_QUERY
+        )
+        if dist == pytest.approx(sub_docs_distances[0], abs=1e-3):
+            return
+    assert False

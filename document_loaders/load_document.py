@@ -7,7 +7,7 @@ from typing import (
 from langchain.docstore.document import Document
 from langchain_community.document_loaders.base import BaseLoader
 
-from text_splitter import chunkable
+from .text_splitter import chunkable
 
 
 @chunkable

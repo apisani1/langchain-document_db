@@ -11,8 +11,8 @@ from typing import (
 from langchain.docstore.document import Document
 from langchain.document_loaders.base import BaseLoader
 
-from load_document import load_document
-from text_splitter import chunkable
+from .load_document import load_document
+from .text_splitter import chunkable
 
 
 @chunkable
@@ -127,5 +127,6 @@ class ScanLoadDirectory(BaseLoader):
             for doc in docs:
                 yield doc
 
+    @chunkable
     def load(self) -> List[Document]:
-        return List(self.lazy_load())
+        return list(self.lazy_load())
