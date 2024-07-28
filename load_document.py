@@ -26,6 +26,9 @@ def chunk_docs(
     Recursively tries to split by different characters to find one that works.
 
     Args:
+        documents (Iterable[Document]): List of Langchain documents to chunk.
+        metadata (Optional[dict], optional): Metadata to add to chunks. Defaults to None.
+        text_splitter (TextSplitter, optional): Text splitter to use. Defaults to RecursiveCharacterTextSplitter.
         chunk_size (int, optional): Maximum size of chunks to return, Defaults to 4000.
         chunk_overlap (int, optional): Overlap in characters between chunks. Defaults to 200.
         separators (list, optional): List of strings with separators. Defaults to None. If None uses ["\n\n", "\n", " "]
@@ -106,6 +109,17 @@ def load_document(file_path: str, *args: Any, **kwargs: Any) -> list[Document]:
 
     Args:
         file_path (str): File path or url address of the document to load.
+        metadata (Optional[dict], optional): Metadata to add to chunks. Defaults to None.
+        chunk_it (bool, optional): Whether to chuck the documents. Defaults to False.
+        text_splitter (TextSplitter, optional): Text splitter to use. Defaults to RecursiveCharacterTextSplitter.
+        chunk_size (int, optional): Maximum size of chunks to return, Defaults to 4000.
+        chunk_overlap (int, optional): Overlap in characters between chunks. Defaults to 200.
+        separators (list, optional): List of strings with separators. Defaults to None.
+                                        If None uses ["\n\n", "\n", " "]
+        length_function (func, optional): Function that measures the length of given chunks. Defaults to len.
+        keep_separator (bool, optional): Whether to keep the separator in the chunks. Defaults to True.
+        is_separator_regex (bool, optional): Wheter the separator is a regular expression. Defaults to False.
+        add_start_index (bool, optional): If True, includes chunk's start index in metadata. Defaults to False.
 
     Returns:
         List of Langchain documents.
@@ -196,6 +210,17 @@ def load_unstructured_document(
               If you use "elements" mode, the unstructured library will split the document into elements
               such as Title and NarrativeText.
         load_tables: Set it to True for unstructured infering the structure of tables automatically.
+        metadata (Optional[dict], optional): Metadata to add to chunks. Defaults to None.
+        chunk_it (bool, optional): Whether to chuck the documents. Defaults to False.
+        text_splitter (TextSplitter, optional): Text splitter to use. Defaults to RecursiveCharacterTextSplitter.
+        chunk_size (int, optional): Maximum size of chunks to return, Defaults to 4000.
+        chunk_overlap (int, optional): Overlap in characters between chunks. Defaults to 200.
+        separators (list, optional): List of strings with separators. Defaults to None.
+                                        If None uses ["\n\n", "\n", " "]
+        length_function (func, optional): Function that measures the length of given chunks. Defaults to len.
+        keep_separator (bool, optional): Whether to keep the separator in the chunks. Defaults to True.
+        is_separator_regex (bool, optional): Wheter the separator is a regular expression. Defaults to False.
+        add_start_index (bool, optional): If True, includes chunk's start index in metadata. Defaults to False.
 
         You can pass in additional unstructured kwargs after mode to apply different unstructured settings. The
         following arguments manage the chunking strategy of unstructed. It may be redundant to use both.
