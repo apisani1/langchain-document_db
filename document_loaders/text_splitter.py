@@ -6,17 +6,64 @@ from typing import (
     Iterable,
     List,
     Optional,
+    Union,
 )
 
 from langchain.docstore.document import Document
 from langchain.text_splitter import (
+    CharacterTextSplitter,
+    HTMLHeaderTextSplitter,
+    MarkdownHeaderTextSplitter,
+    Language,
     RecursiveCharacterTextSplitter,
+    RecursiveJsonSplitter,
     TextSplitter,
 )
+from langchain_experimental.text_splitter import SemanticChunker
+
+DocumentSplitterType = Union[
+    CharacterTextSplitter,
+    HTMLHeaderTextSplitter,
+    MarkdownHeaderTextSplitter,
+    RecursiveCharacterTextSplitter,
+    RecursiveJsonSplitter,
+    TextSplitter,
+    SemanticChunker
+]
+
+DocumentSplitter = (
+    CharacterTextSplitter,
+    HTMLHeaderTextSplitter,
+    MarkdownHeaderTextSplitter,
+    RecursiveCharacterTextSplitter,
+    RecursiveJsonSplitter,
+    SemanticChunker
+)
+
+def _get_splitter(text_splitter: Union[str, DocumentSplitterType], **kwargs) -> DocumentSplitterType:
+    if isinstance(text_splitter, DocumentSplitter):
+        return text_splitter
+    if isinstance(text_splitter, str):
+        match text_splitter:
+            case "character":
+                return CharacterTextSplitter(**kwargs)
+            case "html":
+                return HTMLHeaderTextSplitter(**kwargs)
+            case "markdown":
+                return MarkdownHeaderTextSplitter(**kwargs)
+            case "recursive":
+                return RecursiveCharacterTextSplitter(**kwargs)
+            case "json":
+                return RecursiveJsonSplitter(**kwargs)
+            case "semantic":
+                return SemanticChunker(**kwargs)
+            case _:
+                pass
+    raise ValueError("Bad text_splitter for chunk_docs")
 
 def chunk_docs(
     documents: Iterable[Document],
-    text_splitter: Optional[TextSplitter] = None,
+    text_splitter: Union[str, DocumentSplitterType] = "recursive",
     metadata: Optional[Dict] = None,
     **kwargs: Any,
 ) -> List[Document]:
@@ -27,72 +74,58 @@ def chunk_docs(
 
     Args:
         documents (Iterable[Document]): List of Langchain documents to chunk.
-        metadata (Optional[dict], optional): Metadata to add to chunks. Defaults to None.
-        text_splitter (TextSplitter, optional): Text splitter to use. Defaults to RecursiveCharacterTextSplitter.
-        chunk_size (int, optional): Maximum size of chunks to return, Defaults to 4000.
-        chunk_overlap (int, optional): Overlap in characters between chunks. Defaults to 200.
-        separators (list, optional): List of strings with separators. Defaults to None. If None uses ["\n\n", "\n", " "]
-        length_function (func, optional): Function that measures the length of given chunks. Defaults to len.
-        keep_separator (bool, optional): Whether to keep the separator in the chunks. Defaults to True.
-        is_separator_regex (bool, optional): Wheter the separator is a regular expression. Defaults to False.
-        add_start_index (bool, optional): If True, includes chunk's start index in metadata. Defaults to False.
+        text_splitter (Union[str, DocumentSplitterType], optional): Text splitter to use.
+            Possible values are:
+                "character" or CharacterTextSplitter
+                "html" or HTMLHeaderTextSplitter
+                "markdown" or MarkdownHeaderTextSplitter
+                "recursive" or RecursiveCharacterTextSplitter
+                "json" or RecursiveJsonSplitter
+                "semantic" or SemanticChunker
+        metadata (Optional[Dict], optional): Metadata to add to chunks. Defaults to None.
+        **kwargs: Additional keyword arguments to pass to the text splitter.
 
     Returns:
-        List of Langchain documents or None if an error was encountered.
+        List of Langchain documents.
     """
-
-    text_splitter = text_splitter or RecursiveCharacterTextSplitter(**kwargs)
+    text_splitter = _get_splitter(text_splitter, **kwargs)
     chunks = text_splitter.split_documents(documents)
     if metadata:
         for chunk in chunks:
             chunk.metadata.update(metadata)
     return chunks
 
-
 def chunkable(func: Callable) -> Callable:
     @wraps(func)
     def wrapper(
         *args: Any,
-        text_spliter: Optional[TextSplitter] = None,
+        text_splitter: Union[str, DocumentSplitterType] = None,
         metadata: Optional[dict] = None,
-        chunk_it: bool = False,
-        chunk_size: int = 4000,
-        chunk_overlap: int = 200,
-        separators: Optional[List[str]] = None,
-        length_function: Callable = len,
-        keep_separator: bool = True,
-        is_separator_regex: bool = False,
-        add_start_index: bool = False,
+        splitter_kwargs: Optional[dict] = None,
         **kwargs: Any,
     ) -> Any:
         """
         Decorator that adds chunking capability to a function that returns a list of lamngchain Documents.
 
         Args:
-            chunk_it (bool, optional): Whether to chuck the documents. Defaults to False.
-            chunk_size (int, optional): Maximum size of chunks to return, Defaults to 4000.
-            chunk_overlap (int, optional): Overlap in characters between chunks. Defaults to 200.
-            separators (list, optional): List of strings with separators. Defaults to None.
-                                         If None uses ["\n\n", "\n", " "]
-            length_function (func, optional): Function that measures the length of given chunks. Defaults to len.
-            keep_separator (bool, optional): Whether to keep the separator in the chunks. Defaults to True.
-            is_separator_regex (bool, optional): Wheter the separator is a regular expression. Defaults to False.
-            add_start_index (bool, optional): If True, includes chunk's start index in metadata. Defaults to False.
-            metadata (dict, optional): _description_. Defaults to None.
+            text_splitter (Union[str, DocumentSplitterType], optional): Text splitter to use.
+                Possible values are:
+                    "character" or CharacterTextSplitter
+                    "html" or HTMLHeaderTextSplitter
+                    "markdown" or MarkdownHeaderTextSplitter
+                    "recursive" or RecursiveCharacterTextSplitter
+                    "json" or RecursiveJsonSplitter
+                    "semantic" or SemanticChunker
+            metadata (dict, optional): Metadata to add to each chunk. Defaults to None.
+            splitter_kwargs (dict, optional): Keyword arguments to pass to the text splitter. Defaults to None.
         """
         result = func(*args, **kwargs)
-        if result and chunk_it:
+        if result and text_splitter:
             return chunk_docs(
                 result,
-                text_splitter=text_spliter,
+                text_splitter=text_splitter,
                 metadata=metadata,
-                chunk_size=chunk_size,
-                chunk_overlap=chunk_overlap,
-                separators=separators,
-                length_function=length_function,
-                keep_separator=keep_separator,
-                is_separator_regex=is_separator_regex,
-                add_start_index=add_start_index,
+                **splitter_kwargs,
             )
         return result
 

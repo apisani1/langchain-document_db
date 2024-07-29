@@ -56,9 +56,11 @@ def docs() -> List[Document]:
         chunks.extend(
             load_document(
                 doc_path,
-                chunk_it=True,
-                chunk_size=LARGE_CHUNK_SIZE,
-                chunk_overlap=LARGE_CHUNK_SIZE * 0.1,
+                text_splitter="recursive",
+                splitter_kwargs={
+                    "chunk_size": LARGE_CHUNK_SIZE,
+                    "chunk_overlap": LARGE_CHUNK_SIZE * 0.1,
+                },
             )
         )
     return chunks
@@ -81,7 +83,10 @@ def sub_docs_chunk(docs: List[Document]) -> List[Document]:
     for doc in docs:
         sub_docs.extend(
             chunk(
-                doc, chunk_size=SMALL_CHUNK_SIZE, chunk_overlap=SMALL_CHUNK_SIZE * 0.1
+                doc,
+                text_splitter="recursive",
+                chunk_size=SMALL_CHUNK_SIZE,
+                chunk_overlap=SMALL_CHUNK_SIZE * 0.1,
             )
         )
     return sub_docs
@@ -112,6 +117,7 @@ def document_db() -> Generator[MultiVectorDocumentDB, None, None]:
         db_url="sqlite:///:memory:",
         functor="chunk",
         func_kwargs={
+            "text_splitter": "recursive",
             "chunk_size": SMALL_CHUNK_SIZE,
             "chunk_overlap": SMALL_CHUNK_SIZE * 0.1,
         },
@@ -132,6 +138,7 @@ def db_with_search() -> Generator[MultiVectorDocumentDB, None, None]:
         db_url="sqlite:///:memory:",
         functor="chunk",
         func_kwargs={
+            "text_splitter": "recursive",
             "chunk_size": SMALL_CHUNK_SIZE,
             "chunk_overlap": SMALL_CHUNK_SIZE * 0.1,
         },
@@ -152,6 +159,7 @@ async def adocument_db() -> AsyncGenerator[MultiVectorDocumentDB, None]:
         db_url="sqlite+aiosqlite:///:memory:",
         functor="chunk",
         func_kwargs={
+            "text_splitter": "recursive",
             "chunk_size": SMALL_CHUNK_SIZE,
             "chunk_overlap": SMALL_CHUNK_SIZE * 0.1,
         },
@@ -172,6 +180,7 @@ async def adb_with_search() -> AsyncGenerator[MultiVectorDocumentDB, None]:
         db_url="sqlite+aiosqlite:///:memory:",
         functor="chunk",
         func_kwargs={
+            "text_splitter": "recursive",
             "chunk_size": SMALL_CHUNK_SIZE,
             "chunk_overlap": SMALL_CHUNK_SIZE * 0.1,
         },
@@ -564,7 +573,10 @@ def test_retriever(
 
     # Generate child focuments for the parent document retrieved
     sub_docs = chunk(
-        results[0], chunk_size=SMALL_CHUNK_SIZE, chunk_overlap=SMALL_CHUNK_SIZE * 0.1
+        results[0],
+        text_splitter="recursive",
+        chunk_size=SMALL_CHUNK_SIZE,
+        chunk_overlap=SMALL_CHUNK_SIZE * 0.1,
     )
 
     # Make sure that the most similar child document is one of the child documents generated
@@ -597,7 +609,10 @@ async def test_aretriever(
 
     # Generate child focuments for the parent document retrieved
     sub_docs = chunk(
-        results[0], chunk_size=SMALL_CHUNK_SIZE, chunk_overlap=SMALL_CHUNK_SIZE * 0.1
+        results[0],
+        text_splitter="recursive",
+        chunk_size=SMALL_CHUNK_SIZE,
+        chunk_overlap=SMALL_CHUNK_SIZE * 0.1,
     )
 
     # Make sure that the most similar child document is one of the child documents generated

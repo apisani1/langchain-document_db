@@ -33,6 +33,9 @@ from langchain_core.stores import (
 from document_loaders.text_splitter import chunk_docs
 from ids_db_sql import IDsDB
 
+CHUNK_SIZE = 1000
+CHUNK_OVERLAP = 100
+
 
 def load_question_chain(llm: BaseLanguageModel) -> Chain:
     """
@@ -139,6 +142,13 @@ def _generate_questions(
     ]
 
 
+FunctorType = Union[
+    str,
+    Callable,
+    List[Union[str, Callable, Tuple[Union[str, Callable], Dict]]],
+]
+
+
 class MultiVectorStore(VectorStore):
     """
     This class lets you create multiple vectors per document. There are multiple use cases where this is beneficial.
@@ -192,13 +202,7 @@ class MultiVectorStore(VectorStore):
         ids_db_path: str = "",
         id_key: str = "doc_id",
         child_id_key: str = "child_ids",
-        functor: Optional[
-            Union[
-                str,
-                Callable,
-                List[Union[str, Callable, Tuple[Union[str, Callable], Dict]]],
-            ]
-        ] = None,
+        functor: Optional[FunctorType] = None,
         func_kwargs: Optional[dict] = None,
         llm: Optional[BaseLanguageModel] = None,
         max_retries: int = 0,
@@ -216,7 +220,11 @@ class MultiVectorStore(VectorStore):
         self.child_id_key = child_id_key
         if not functor:
             functor = "chunk"
-            func_kwargs = func_kwargs or {"chunk_size": 500, "chunk_overlap": 50}
+            func_kwargs = func_kwargs or {
+                "text_splitter": "recursive",
+                "chunk_size": CHUNK_SIZE,
+                "chunk_overlap": CHUNK_OVERLAP,
+            }
         self.set_func(functor, func_kwargs, llm, max_retries)
         self.search_kwargs = search_kwargs or {}
         self.search_type = search_type
@@ -226,11 +234,7 @@ class MultiVectorStore(VectorStore):
 
     def set_func(
         self,
-        functor: Union[
-            str,
-            Callable,
-            List[Union[str, Callable, Tuple[Union[str, Callable], Dict]]],
-        ],
+        functor: FunctorType,
         func_kwargs: Optional[Dict] = None,
         llm: Optional[BaseLanguageModel] = None,
         max_retries: Optional[int] = None,
@@ -263,11 +267,7 @@ class MultiVectorStore(VectorStore):
     @classmethod
     def _get_func_list(
         cls,
-        functor: Union[
-            str,
-            Callable,
-            List[Union[str, Callable, Tuple[Union[str, Callable], Dict]]],
-        ],
+        functor: FunctorType,
         func_kwargs: Optional[Dict] = None,
         llm: Optional[BaseLanguageModel] = None,
     ) -> List[Tuple[Callable, dict]]:
@@ -439,13 +439,7 @@ class MultiVectorStore(VectorStore):
         self,
         documents: Iterable[Document],
         ids: Optional[list[str]] = None,
-        functor: Optional[
-            Union[
-                str,
-                Callable,
-                List[Union[str, Callable, Tuple[Union[str, Callable], Dict]]],
-            ]
-        ] = None,
+        functor: Optional[FunctorType] = None,
         func_kwargs: Optional[dict] = None,
         llm: Optional[BaseLanguageModel] = None,
         max_retries: Optional[int] = None,
