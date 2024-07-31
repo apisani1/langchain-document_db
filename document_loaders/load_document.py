@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 from typing import (
     Any,
+    Iterator,
+    Optional,
     Union,
 )
 
@@ -9,12 +11,114 @@ from langchain.docstore.document import Document
 from langchain_community.document_loaders.base import BaseLoader
 from langchain_community.document_loaders.text import TextLoader
 
-from .text_splitter import chunkable
+from .text_splitter import chunkable, chunk_docs, DocumentSplitterType
+
+
+@chunkable
+def _get_document_loader(file_path: Union[str, Path], **kwargs: Any) -> Any:
+    if "mode" in kwargs and kwargs["mode"] == "raw":
+        kwargs.pop("mode")
+        if "encoding" not in kwargs and "autodetect_encoding" not in kwargs:
+            kwargs["autodetect_encoding"] = True
+
+        return TextLoader(file_path, **kwargs)
+
+    _, extension = os.path.splitext(file_path)
+    match extension:
+        case ".txt":
+            if "encoding" not in kwargs and "autodetect_encoding" not in kwargs:
+                kwargs["autodetect_encoding"] = True
+
+            return TextLoader(file_path, **kwargs)
+        case ".pdf":
+            from langchain.document_loaders.unstructured import (
+                UnstructuredFileLoader,
+            )
+
+            if "mode" not in kwargs:
+                kwargs["mode"] = "single"
+            if "strategy" not in kwargs:
+                kwargs["strategy"] = "fast"
+            if "load_tables" not in kwargs:
+                kwargs["load_tables"] = False
+            elif kwargs["load_tables"]:
+                kwargs["skip_infer_table_types"] = []
+                kwargs["pdf_infer_table_structure"] = True
+
+            return UnstructuredFileLoader(file_path, **kwargs)
+        case ".docx" | ".doc":
+            from langchain.document_loaders.word_document import (
+                UnstructuredWordDocumentLoader,
+            )
+
+            return UnstructuredWordDocumentLoader(file_path, **kwargs)
+        case ".csv":
+            from langchain.document_loaders.csv_loader import CSVLoader
+
+            return CSVLoader(file_path, **kwargs)
+        case ".eml":
+            from langchain.document_loaders.email import UnstructuredEmailLoader
+
+            return UnstructuredEmailLoader(file_path, **kwargs)
+        case ".epub":
+            from langchain.document_loaders.epub import UnstructuredEPubLoader
+
+            return UnstructuredEPubLoader(file_path, **kwargs)
+        case ".xlsx" | ".xls":
+            # data = load_document(file_path_name, mode='elements')
+            from langchain.document_loaders.excel import UnstructuredExcelLoader
+
+            return UnstructuredExcelLoader(file_path, **kwargs)
+        case ".pptx" | ".ppt":
+            # data = load_document(file_path_name, mode='elements')
+            from langchain.document_loaders.powerpoint import (
+                UnstructuredPowerPointLoader,
+            )
+
+            return UnstructuredPowerPointLoader(file_path, **kwargs)
+        case ".srt":
+            from langchain.document_loaders.srt import SRTLoader
+
+            return SRTLoader(file_path, **kwargs)
+        case ".html":
+            from langchain.document_loaders.html import UnstructuredHTMLLoader
+
+            if "mode" not in kwargs:
+                kwargs["mode"] = "single"
+            if "strategy" not in kwargs:
+                kwargs["strategy"] = "fast"
+
+            return UnstructuredHTMLLoader(file_path, **kwargs)
+        case ".json" | ".jsonl":
+            from langchain.document_loaders.json_loader import JSONLoader
+
+            if "jq_schema" not in kwargs:
+                kwargs["jq_schema"] = "."
+            if "text_content" not in kwargs:
+                kwargs["text_content"] = False
+
+            return JSONLoader(file_path, **kwargs)
+        case ".md":
+            from langchain.document_loaders.markdown import (
+                UnstructuredMarkdownLoader,
+            )
+
+            return UnstructuredMarkdownLoader(file_path, **kwargs)
+        case ".ipynb":
+            from langchain.document_loaders.notebook import NotebookLoader
+
+            return NotebookLoader(file_path, **kwargs)
+        case _:
+            from langchain.document_loaders.unstructured import (
+                UnstructuredFileLoader,
+            )
+
+            return UnstructuredFileLoader(file_path, **kwargs)
 
 
 @chunkable
 def load_document(
-    file_path: Union[str, Path], *args: Any, **kwargs: Any
+    file_path: Union[str, Path], **kwargs: Any
 ) -> list[Document]:
     """
     Load an individual file and covert it into a list of Lanchain documents.
@@ -37,102 +141,38 @@ def load_document(
     Returns:
         List of Langchain documents.
     """
-    loader: BaseLoader
+    loader = _get_document_loader(file_path, **kwargs)
+    if loader:
+        return loader.load()
+    return []
 
-    if "mode" in kwargs and kwargs["mode"] == "raw":
-        kwargs.pop("mode")
-        if "encoding" not in kwargs and "autodetect_encoding" not in kwargs:
-            kwargs["autodetect_encoding"] = True
 
-        loader = TextLoader(file_path, *args, **kwargs)
-    else:
-        _, extension = os.path.splitext(file_path)
-        match extension:
-            case ".txt":
-                if "encoding" not in kwargs and "autodetect_encoding" not in kwargs:
-                    kwargs["autodetect_encoding"] = True
+class DocumentLoader(BaseLoader):
+    def __init__(
+        self,
+        file_path: Union[str, Path],
+        *,
+        text_splitter: Union[str, DocumentSplitterType] = None,
+        metadata: Optional[dict] = None,
+        splitter_kwargs: Optional[dict] = None,
+        **kwargs: Any,
+    ) -> None:
+        self.loader = _get_document_loader(file_path, **kwargs)
+        self.text_splitter = text_splitter
+        self.metadata = metadata or {}
+        self.splitter_kwargs = splitter_kwargs or {}
 
-                loader = TextLoader(file_path, *args, **kwargs)
-            case ".pdf":
-                from langchain.document_loaders.unstructured import (
-                    UnstructuredFileLoader,
-                )
-
-                if "mode" not in kwargs:
-                    kwargs["mode"] = "single"
-                if "strategy" not in kwargs:
-                    kwargs["strategy"] = "fast"
-                if "load_tables" not in kwargs:
-                    kwargs["load_tables"] = False
-                elif kwargs["load_tables"]:
-                    kwargs["skip_infer_table_types"] = []
-                    kwargs["pdf_infer_table_structure"] = True
-
-                loader = UnstructuredFileLoader(file_path, *args, **kwargs)
-            case ".docx" | ".doc":
-                from langchain.document_loaders.word_document import Docx2txtLoader
-
-                loader = Docx2txtLoader(file_path, *args, **kwargs)
-            case ".csv":
-                from langchain.document_loaders.csv_loader import CSVLoader
-
-                loader = loader = CSVLoader(file_path, *args, **kwargs)
-            case ".eml":
-                from langchain.document_loaders.email import UnstructuredEmailLoader
-
-                loader = UnstructuredEmailLoader(file_path, *args, **kwargs)
-            case ".epub":
-                from langchain.document_loaders.epub import UnstructuredEPubLoader
-
-                loader = UnstructuredEPubLoader(file_path, *args, **kwargs)
-            case ".xlsx" | ".xls":
-                # data = load_document(file_path_name, mode='elements')
-                from langchain.document_loaders.excel import UnstructuredExcelLoader
-
-                loader = UnstructuredExcelLoader(file_path, *args, **kwargs)
-            case ".pptx" | ".ppt":
-                # data = load_document(file_path_name, mode='elements')
-                from langchain.document_loaders.powerpoint import (
-                    UnstructuredPowerPointLoader,
-                )
-
-                loader = UnstructuredPowerPointLoader(file_path, *args, **kwargs)
-            case ".srt":
-                from langchain.document_loaders.srt import SRTLoader
-
-                loader = SRTLoader(file_path, *args, **kwargs)
-            case ".html":
-                from langchain.document_loaders.html import UnstructuredHTMLLoader
-
-                if "mode" not in kwargs:
-                    kwargs["mode"] = "single"
-                if "strategy" not in kwargs:
-                    kwargs["strategy"] = "fast"
-
-                loader = UnstructuredHTMLLoader(file_path, *args, **kwargs)
-            case ".json":
-                from langchain.document_loaders.json_loader import JSONLoader
-
-                if "jq_schema" not in kwargs:
-                    kwargs["jq_schema"] = "."
-                if "text_content" not in kwargs:
-                    kwargs["text_content"] = False
-
-                loader = JSONLoader(file_path, *args, **kwargs)
-            case ".md":
-                from langchain.document_loaders.markdown import (
-                    UnstructuredMarkdownLoader,
-                )
-
-                loader = UnstructuredMarkdownLoader(file_path, *args, **kwargs)
-            case ".ipynb":
-                from langchain.document_loaders.notebook import NotebookLoader
-
-                loader = NotebookLoader(file_path, *args, **kwargs)
-            case _:
-                from langchain.document_loaders.unstructured import (
-                    UnstructuredFileLoader,
-                )
-
-                loader = UnstructuredFileLoader(file_path, *args, **kwargs)
-    return loader.load()
+    def lazy_load(self) -> Iterator[Document]:
+        loader = self.loader.lazy_load if hasattr(self.loader, "lazy_load") else self.loader.load
+        if self.text_splitter:
+            for doc in loader():
+                for sub_doc in chunk_docs(
+                    [doc],
+                    text_splitter=self.text_splitter,
+                    metadata=self.metadata,
+                    **self.splitter_kwargs,
+                ):
+                    yield sub_doc
+        else:
+            for doc in loader():
+                yield doc

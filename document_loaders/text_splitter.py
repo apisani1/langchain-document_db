@@ -92,6 +92,7 @@ DocumentSplitter = (
 extension_to_type = {
     '.html': "html",
     '.json': "json",
+    '.jsonl': "json",
     '.md': "markdown",
     '.go': "go",
     '.java': "java",
