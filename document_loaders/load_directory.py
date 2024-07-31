@@ -12,7 +12,6 @@ from langchain.docstore.document import Document
 from langchain.document_loaders.base import BaseLoader
 
 from .load_document import load_document
-from .text_splitter import chunkable
 
 
 def load_directory_lazy(

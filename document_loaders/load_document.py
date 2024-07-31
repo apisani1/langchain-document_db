@@ -11,10 +11,9 @@ from langchain.docstore.document import Document
 from langchain_community.document_loaders.base import BaseLoader
 from langchain_community.document_loaders.text import TextLoader
 
-from .text_splitter import chunkable, chunk_docs, DocumentSplitterType
+from .text_splitter import chunk_docs, DocumentSplitterType
 
 
-@chunkable
 def _get_document_loader(file_path: Union[str, Path], **kwargs: Any) -> Any:
     if "mode" in kwargs and kwargs["mode"] == "raw":
         kwargs.pop("mode")
@@ -116,9 +115,59 @@ def _get_document_loader(file_path: Union[str, Path], **kwargs: Any) -> Any:
             return UnstructuredFileLoader(file_path, **kwargs)
 
 
-@chunkable
+def load_document_lazy(
+    file_path: Union[str, Path],
+    *,
+    text_splitter: Union[str, DocumentSplitterType] = None,
+    metadata: Optional[dict] = None,
+    splitter_kwargs: Optional[dict] = None,
+    **kwargs: Any,
+) -> Iterator[Document]:
+    """
+    Generatior that loads an individual file and covert it into a list of Lanchain documents.
+
+    The corresponding document loader is selected acording to the file extension. If a specific document loader
+    is not available tries with the UnstructuredFileLoader.
+
+    Args:
+        file_path (str | Path): File path of the document to load.
+        text_splitter (Union[str, DocumentSplitterType], optional): Text splitter to use to chunks the document into
+            smaller documents. Possible values are:
+                "auto": Automatically determine the splitter based on the file extension.
+                "character" or CharacterTextSplitter,
+                "markdown" or MarkdownHeaderTextSplitter,
+                "recursive" or RecursiveCharacterTextSplitter,
+                "semantic" or SemanticChunker,
+                "c", "cpp", "csharp", "cobol",  "elixir", "go", "haskell", "html", "java", "js", "json", "kotlin",
+                "latex", "lua", "php", "perl", "proto", "python", "rst", "ruby", "rust", "scala", "sol", "swift" "ts"
+        splitter_kwargs (dict, optional): Keyword arguments to pass to the text splitter. Defaults to None.
+    Yiels:
+        Langchain documents generated from the file.
+    """
+    loader = _get_document_loader(file_path, **kwargs)
+    splitter_kwargs = splitter_kwargs or {}
+    loader_method = loader.lazy_load if hasattr(loader, "lazy_load") else loader.load
+    if text_splitter:
+        for doc in loader_method():
+            for sub_doc in chunk_docs(
+                [doc],
+                text_splitter=text_splitter,
+                metadata=metadata,
+                **splitter_kwargs,
+            ):
+                yield sub_doc
+    else:
+        for doc in loader_method():
+            yield doc
+
+
 def load_document(
-    file_path: Union[str, Path], **kwargs: Any
+    file_path: Union[str, Path],
+    *,
+    text_splitter: Union[str, DocumentSplitterType] = None,
+    metadata: Optional[dict] = None,
+    splitter_kwargs: Optional[dict] = None,
+    **kwargs: Any,
 ) -> list[Document]:
     """
     Load an individual file and covert it into a list of Lanchain documents.
@@ -141,10 +190,15 @@ def load_document(
     Returns:
         List of Langchain documents.
     """
-    loader = _get_document_loader(file_path, **kwargs)
-    if loader:
-        return loader.load()
-    return []
+    return list(
+        load_document_lazy(
+            file_path,
+            text_splitter=text_splitter,
+            metadata=metadata,
+            splitter_kwargs=splitter_kwargs,
+            **kwargs,
+        )
+    )
 
 
 class DocumentLoader(BaseLoader):
@@ -163,16 +217,10 @@ class DocumentLoader(BaseLoader):
         self.splitter_kwargs = splitter_kwargs or {}
 
     def lazy_load(self) -> Iterator[Document]:
-        loader = self.loader.lazy_load if hasattr(self.loader, "lazy_load") else self.loader.load
-        if self.text_splitter:
-            for doc in loader():
-                for sub_doc in chunk_docs(
-                    [doc],
-                    text_splitter=self.text_splitter,
-                    metadata=self.metadata,
-                    **self.splitter_kwargs,
-                ):
-                    yield sub_doc
-        else:
-            for doc in loader():
-                yield doc
+        for doc in load_document_lazy(
+            self.loader,
+            text_splitter=self.text_splitter,
+            metadata=self.metadata,
+            splitter_kwargs=self.splitter_kwargs,
+        ):
+            yield doc
