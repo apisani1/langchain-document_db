@@ -10,7 +10,6 @@ from typing import (
 
 from langchain.docstore.document import Document
 from langchain_community.document_loaders.base import BaseLoader
-from langchain_community.document_loaders.text import TextLoader
 
 from .text_splitter import chunk_docs, DocumentSplitterType
 from document_loaders import loaders_config
@@ -42,9 +41,9 @@ def _get_document_loader(file_path: Union[str, Path], **kwargs: Any) -> Any:
                     "The unstructured package is not installed. Please install it with `pip install unstructured`"
                 )
 
-    if not kwargs:
-        kwargs = loader_kwargs
-    return loader(file_path, **kwargs)
+    loader_kwargs.update(kwargs) # may produce kwargs conflicts
+
+    return loader(file_path, **loader_kwargs)
 
 
 def load_document_lazy(
@@ -77,7 +76,6 @@ def load_document_lazy(
         Langchain documents generated from the file.
     """
     loader = _get_document_loader(file_path, **kwargs)
-    splitter_kwargs = splitter_kwargs or {}
     loader_method = loader.lazy_load if hasattr(loader, "lazy_load") else loader.load
     if text_splitter:
         for doc in loader_method():
@@ -85,7 +83,7 @@ def load_document_lazy(
                 [doc],
                 text_splitter=text_splitter,
                 metadata=metadata,
-                **splitter_kwargs,
+                **(splitter_kwargs or {}),
             ):
                 yield sub_doc
     else:
@@ -165,4 +163,5 @@ class DocumentLoader(BaseLoader):
             text_splitter=self.text_splitter,
             metadata=self.metadata,
             splitter_kwargs=self.splitter_kwargs,
+            **self.kwargs,
         )

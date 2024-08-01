@@ -12,7 +12,7 @@ from typing import (
 from langchain.docstore.document import Document
 from langchain.document_loaders.base import BaseLoader
 
-from .load_document import load_document
+from .load_document import load_document_lazy
 
 
 def load_directory_lazy(
@@ -50,7 +50,7 @@ def load_directory_lazy(
     Yields:
     Lanchain Documents generated from it.
     """
-    for root,dirs, files in os.walk(
+    for root, _, files in os.walk(
         dir_path, topdown=topdown, followlinks=followlinks, onerror=on_error
     ):
         if root != './' and dir_filter is not None and not fnmatch.fnmatch(root, dir_filter):
@@ -62,7 +62,7 @@ def load_directory_lazy(
                 if pre_process:
                     pre_process(file_path)
                 try:
-                    for doc in load_document(file_path, **kwargs):
+                    for doc in load_document_lazy(file_path, **kwargs):
                         if post_process:
                             post_process(file_path, doc)
                         yield doc
