@@ -1,4 +1,5 @@
 import fnmatch
+import logging
 import os
 from typing import (
     Any,
@@ -18,6 +19,7 @@ def load_directory_lazy(
     dir_path: str,
     *,
     recursive: bool = True,
+    dir_filter: Optional[str] = None,
     file_filter: Optional[str] = None,
     pre_process: Optional[Callable] = None,
     post_process: Optional[Callable] = None,
@@ -34,7 +36,7 @@ def load_directory_lazy(
     dir_path (str): Path to the directory to be scanned.
     recursive (bool, optional): if True, the search will include subdirectories. If False, only the top directory is
                                 scanned. Defaults to True.
-    file_filter (str, optional): A glob-style pattern that files must match to be included. Default is None.
+    file_filter (str, optional): fpattern that files must match to be included. Default is None.
     pre_process (func, optional): A function to call on each file before calling load_document on them. Deaults to None.
     post_process (func, optional): A function to call on each doc after calling load_document on them. Deaults to None.
     top_down (bool, optional): Whether the scan is done top-down or bottoms-up. Defaults to True.
@@ -48,21 +50,27 @@ def load_directory_lazy(
     Yields:
     Lanchain Documents generated from it.
     """
-    for root, _, files in os.walk(
+    for root,dirs, files in os.walk(
         dir_path, topdown=topdown, followlinks=followlinks, onerror=on_error
     ):
+        if root != './' and dir_filter is not None and not fnmatch.fnmatch(root, dir_filter):
+            continue
+
         for file in files:
             file_path = os.path.join(root, file)
             if file_filter is None or fnmatch.fnmatch(file, file_filter):
                 if pre_process:
                     pre_process(file_path)
-                for doc in load_document(file_path, **kwargs):
-                    if post_process:
-                        post_process(file_path, doc)
-                    yield doc
+                try:
+                    for doc in load_document(file_path, **kwargs):
+                        if post_process:
+                            post_process(file_path, doc)
+                        yield doc
+                except ValueError as e:
+                    logging.warning(f"Error loading file {file_path}: {e}")
 
         if not recursive:
-            break  # Stop recursion if not required
+            break
 
 
 def load_directory(
@@ -141,6 +149,5 @@ class DirectoryLoader(BaseLoader):
         self.kwargs = kwargs
 
     def lazy_load(self) -> Iterator[Document]:
-        for docs in load_directory_lazy(self.dir_path, **self.kwargs):
-            for doc in docs:
-                yield doc
+        for doc in load_directory_lazy(self.dir_path, **self.kwargs):
+            yield doc

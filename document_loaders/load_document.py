@@ -88,7 +88,7 @@ def _get_document_loader(file_path: Union[str, Path], **kwargs: Any) -> Any:
                 kwargs["strategy"] = "fast"
 
             return UnstructuredHTMLLoader(file_path, **kwargs)
-        case ".json" | ".jsonl":
+        case ".json":
             from langchain.document_loaders.json_loader import JSONLoader
 
             if "jq_schema" not in kwargs:
@@ -97,6 +97,19 @@ def _get_document_loader(file_path: Union[str, Path], **kwargs: Any) -> Any:
                 kwargs["text_content"] = False
 
             return JSONLoader(file_path, **kwargs)
+
+        case ".jsonl":
+            from langchain.document_loaders.json_loader import JSONLoader
+
+            if "jq_schema" not in kwargs:
+                kwargs["jq_schema"] = "."
+            if "text_content" not in kwargs:
+                kwargs["text_content"] = False
+            if "json_lines" not in kwargs:
+                kwargs["json_lines"] = True
+
+            return JSONLoader(file_path, **kwargs)
+
         case ".md":
             from langchain.document_loaders.markdown import (
                 UnstructuredMarkdownLoader,
@@ -124,7 +137,7 @@ def load_document_lazy(
     **kwargs: Any,
 ) -> Iterator[Document]:
     """
-    Generatior that loads an individual file and covert it into a list of Lanchain documents.
+    Generator that loads an individual file and covert it into a list of Lanchain documents.
 
     The corresponding document loader is selected acording to the file extension. If a specific document loader
     is not available tries with the UnstructuredFileLoader.
@@ -190,15 +203,15 @@ def load_document(
     Returns:
         List of Langchain documents.
     """
-    return list(
-        load_document_lazy(
-            file_path,
+    docs = _get_document_loader(file_path, **kwargs).load()
+    if text_splitter:
+        return chunk_docs(
+            docs,
             text_splitter=text_splitter,
             metadata=metadata,
-            splitter_kwargs=splitter_kwargs,
-            **kwargs,
+            **(splitter_kwargs or {}),
         )
-    )
+    return docs
 
 
 class DocumentLoader(BaseLoader):
@@ -211,16 +224,26 @@ class DocumentLoader(BaseLoader):
         splitter_kwargs: Optional[dict] = None,
         **kwargs: Any,
     ) -> None:
-        self.loader = _get_document_loader(file_path, **kwargs)
+        self.file_path = file_path
         self.text_splitter = text_splitter
         self.metadata = metadata or {}
         self.splitter_kwargs = splitter_kwargs or {}
+        self.kwargs = kwargs
 
     def lazy_load(self) -> Iterator[Document]:
         for doc in load_document_lazy(
-            self.loader,
+            self.file_path,
             text_splitter=self.text_splitter,
             metadata=self.metadata,
             splitter_kwargs=self.splitter_kwargs,
+            **self.kwargs,
         ):
             yield doc
+
+    def load(self) -> list[Document]:
+        return load_document(
+            self.file_path,
+            text_splitter=self.text_splitter,
+            metadata=self.metadata,
+            splitter_kwargs=self.splitter_kwargs,
+        )
