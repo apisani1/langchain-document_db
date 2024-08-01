@@ -1,0 +1,73 @@
+loader:
+    - extension: txt
+      class: TextLoader
+      module: langchain_community.document_loaders.text
+      params:
+        autodetect_encoding : True
+    - extension: pdf
+      class: UnstructuredFileLoader
+      module: langchain.document_loaders.unstructured
+      params:
+        mode: single
+        strategy: fast
+        load_tables: False
+        skip_infer_table_types: []
+        pdf_infer_table_structure: True
+    - extension: docx
+      class: UnstructuredWordDocumentLoader
+      module: langchain.document_loaders.word_document
+    - extension: doc
+      class: UnstructuredWordDocumentLoader
+      module: langchain.document_loaders.word_document
+    - extension: csv
+      class: CSVLoader
+      module: langchain.document_loaders.csv_loader
+    - extension: eml
+      class: UnstructuredEmailLoader
+      module: langchain.document_loaders.email
+    - extension: epub
+      class: UnstructuredEPubLoader
+      module: langchain.document_loaders.epub
+    - extension: xlsx
+      class: UnstructuredExcelLoader
+      module: langchain.document_loaders.excel
+    - extension: xls
+      class: UnstructuredExcelLoader
+      module: langchain.document_loaders.excel
+    - extension: pptx
+      class: UnstructuredPowerPointLoader
+      module: langchain.document_loaders.powerpoint
+    - extension: ppt
+      class: UnstructuredPowerPointLoader
+      module: langchain.document_loaders.powerpoint
+    - extension: srt
+      class: SRTLoader
+      module: langchain.document_loaders.srt
+    - extension: html
+      class: UnstructuredHTMLLoader
+      module: langchain.document_loaders.html
+      params:
+        mode: single
+        strategy: fast
+    - extension: json
+      class: JSONLoader
+      module: langchain.document_loaders.json_loader
+      params:
+        jq_schema: .
+        text_content: False
+    - extension: jsonl
+      class: JSONLoader
+      module: langchain.document_loaders.json_loader
+      params:
+        jq_schema: .
+        text_content: False
+        json_lines: True
+    - extension: md
+      class: UnstructuredMarkdownLoader
+      module: langchain.document_loaders.markdown
+    - extension: ipynb
+      class: NotebookLoader
+      module: langchain.document_loaders.notebook
+    - extension: default
+      class: UnstructuredFileLoader
+      module: langchain.document_loaders.unstructured
