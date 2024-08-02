@@ -1,11 +1,9 @@
 import fnmatch
-import logging
 import os
 from typing import (
     Any,
     Callable,
     Iterator,
-    List,
     Optional,
 )
 
@@ -13,6 +11,7 @@ from langchain.docstore.document import Document
 from langchain.document_loaders.base import BaseLoader
 
 from .load_document import load_document_lazy
+from pip._internal.exceptions import InstallationError
 
 
 def load_directory_lazy(
@@ -23,9 +22,10 @@ def load_directory_lazy(
     file_filter: Optional[str] = None,
     pre_process: Optional[Callable] = None,
     post_process: Optional[Callable] = None,
+    on_file_error: Optional[Callable] = None,
     topdown: bool = True,
     followlinks: bool = False,
-    on_error: Optional[Callable] = None,
+    on_os_error: Optional[Callable] = None,
     **kwargs: Any,
 ) -> Iterator[Document]:
     """
@@ -36,12 +36,15 @@ def load_directory_lazy(
     dir_path (str): Path to the directory to be scanned.
     recursive (bool, optional): if True, the search will include subdirectories. If False, only the top directory is
                                 scanned. Defaults to True.
+    dir_filter (str, optional): fpattern that directories must match to be included. Default is None.
     file_filter (str, optional): fpattern that files must match to be included. Default is None.
-    pre_process (func, optional): A function to call on each file before calling load_document on them. Deaults to None.
-    post_process (func, optional): A function to call on each doc after calling load_document on them. Deaults to None.
+    pre_process (callable, optional): A function to call on each file before calling load_document on them. Deaults to None.
+    post_process (callable, optional): A function to call on each doc after calling load_document on them. Deaults to None.
+    on_file_error (callable, optional): A function to be called if an error is raised while loading a file. It will be
+                              called with two arguments, the file path and the exception. Defaults to None.
     top_down (bool, optional): Whether the scan is done top-down or bottoms-up. Defaults to True.
     follow_links (bool, optional): Whether to follow simbolic links. Defaults to False.
-    onerror (bool, optional): A function to be called if an error is raised while scanning the directory. It will be
+    on_os_error (callable, optional): A function to be called if an error is raised while scanning the directory. It will be
                               called with one argument, an OSError instance.
                               It can report the error to continue with the walk, or raise the exception to abort the
                               walk.  Note that the filename is available as the filename attribute of the exception
@@ -51,9 +54,13 @@ def load_directory_lazy(
     Lanchain Documents generated from it.
     """
     for root, _, files in os.walk(
-        dir_path, topdown=topdown, followlinks=followlinks, onerror=on_error
+        dir_path, topdown=topdown, followlinks=followlinks, onerror=on_os_error
     ):
-        if root != './' and dir_filter is not None and not fnmatch.fnmatch(root, dir_filter):
+        if (
+            root != "./"
+            and dir_filter is not None
+            and not fnmatch.fnmatch(root, dir_filter)
+        ):
             continue
 
         for file in files:
@@ -66,8 +73,9 @@ def load_directory_lazy(
                         if post_process:
                             post_process(file_path, doc)
                         yield doc
-                except ValueError as e:
-                    logging.warning(f"Error loading file {file_path}: {e}")
+                except Exception as e:
+                    if on_file_error:
+                        on_file_error(root, file, e)
 
         if not recursive:
             break
