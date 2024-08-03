@@ -1,3 +1,5 @@
+import logging
+import os
 import traceback
 from datetime import (
     datetime,
@@ -6,6 +8,7 @@ from datetime import (
 from typing import (
     Dict,
     List,
+    Union,
 )
 
 from sqlalchemy import (
@@ -16,6 +19,7 @@ from sqlalchemy import (
     Text,
     create_engine,
 )
+from sqlalchemy.exc import NoSuchColumnError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import (
     Session,
@@ -33,9 +37,9 @@ class FileError(Base):
     timestamp = Column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
-    root = Column(String(255))
+    dir = Column(String(255))
     file = Column(String(255))
-    file_extension = Column(String(50))
+    extension = Column(String(50))
     error_type = Column(String(100))
     error_message = Column(Text)
     error_traceback = Column(Text)
@@ -47,25 +51,28 @@ class FileErrorDB:
         Base.metadata.create_all(self.engine)
         self.Session = sessionmaker(bind=self.engine)
 
-    def add_file_error(self, root, file, error):
+    def add_file_error(self, file_path, error):
+        dir, file = os.path.split(file_path)
+        extension = os.path.splitext(file)[1][1:]
         error_type = type(error).__name__
         error_message = str(error)
         error_traceback = traceback.format_exc()
-        file_extension = file.split(".")[-1] if "." in file else ""
+
+        print(f"***Error: {error_message}")
 
         self._insert_error(
-            root, file, file_extension, error_type, error_message, error_traceback
+            dir, file, extension, error_type, error_message, error_traceback
         )
 
     def _insert_error(
-        self, root, file, file_extension, error_type, error_message, error_traceback
+        self, dir, file, extension, error_type, error_message, error_traceback
     ):
         session = self.Session()
         try:
             new_error = FileError(
-                root=root,
+                dir=dir,
                 file=file,
-                file_extension=file_extension,
+                extension=extension,
                 error_type=error_type,
                 error_message=error_message,
                 error_traceback=error_traceback,
@@ -74,7 +81,7 @@ class FileErrorDB:
             session.commit()
         except Exception as e:
             session.rollback()
-            print(f"Error inserting into database: {str(e)}")
+            logging.error(f"Error inserting into database: {str(e)}")
         finally:
             session.close()
 
@@ -90,7 +97,7 @@ class FileErrorDB:
                 return False
         except Exception as e:
             session.rollback()
-            print(f"Error deleting entry from database: {str(e)}")
+            logging.error(f"Error deleting entry from database: {str(e)}")
             return False
         finally:
             session.close()
@@ -103,7 +110,7 @@ class FileErrorDB:
             return True
         except Exception as e:
             session.rollback()
-            print(f"Error cleaning database: {str(e)}")
+            logging.error(f"Error cleaning database: {str(e)}")
             return False
         finally:
             session.close()
@@ -112,52 +119,92 @@ class FileErrorDB:
         return {
             "id": row.id,
             "timestamp": row.timestamp,
-            "root": row.root,
+            "dir": row.dir,
             "file": row.file,
-            "file_extension": row.file_extension,
+            "extension": row.extension,
             "error_type": row.error_type,
             "error_message": row.error_message,
             "error_traceback": row.error_traceback,
         }
 
-    def get_all_errors(self) -> List[Dict]:
+    def _group_results(self, rows, group_by):
+        if group_by not in FileError.__table__.columns:
+            raise ValueError(f"Invalid group_by field: {group_by}")
+
+        grouped_results = {}
+        for row in rows:
+            key = getattr(row, group_by)
+            if key not in grouped_results:
+                grouped_results[key] = []
+            grouped_results[key].append(self._row_to_dict(row))
+        return grouped_results
+
+    def get_all_errors(
+        self, group_by: str = None
+    ) -> Union[List[Dict], Dict[str, List[Dict]]]:
         session: Session = self.Session()
         try:
-            rows = session.query(FileError).all()
+            query = session.query(FileError)
+            if group_by:
+                query = query.group_by(getattr(FileError, group_by))
+            rows = query.all()
+            if group_by:
+                return self._group_results(rows, group_by)
             return [self._row_to_dict(row) for row in rows]
+        except NoSuchColumnError:
+            raise ValueError(f"Invalid group_by field: {group_by}")
         finally:
             session.close()
 
-    def get_errors_by_type(self, error_type: str) -> List[Dict]:
+    def get_errors_by_type(
+        self, error_type: str, group_by: str = None
+    ) -> Union[List[Dict], Dict[str, List[Dict]]]:
         session: Session = self.Session()
         try:
-            rows = session.query(FileError).filter_by(error_type=error_type).all()
+            query = session.query(FileError).filter_by(error_type=error_type)
+            if group_by:
+                query = query.group_by(getattr(FileError, group_by))
+            rows = query.all()
+            if group_by:
+                return self._group_results(rows, group_by)
             return [self._row_to_dict(row) for row in rows]
+        except NoSuchColumnError:
+            raise ValueError(f"Invalid group_by field: {group_by}")
         finally:
             session.close()
 
-    def get_errors_by_extension(self, file_extension: str) -> List[Dict]:
+    def get_errors_by_extension(
+        self, file_extension: str, group_by: str = None
+    ) -> Union[List[Dict], Dict[str, List[Dict]]]:
         session: Session = self.Session()
         try:
-            rows = (
-                session.query(FileError).filter_by(file_extension=file_extension).all()
-            )
+            query = session.query(FileError).filter_by(file_extension=file_extension)
+            if group_by:
+                query = query.group_by(getattr(FileError, group_by))
+            rows = query.all()
+            if group_by:
+                return self._group_results(rows, group_by)
             return [self._row_to_dict(row) for row in rows]
+        except NoSuchColumnError:
+            raise ValueError(f"Invalid group_by field: {group_by}")
         finally:
             session.close()
 
     def get_errors_by_date_range(
-        self, start_date: datetime, end_date: datetime
-    ) -> List[Dict]:
+        self, start_date: datetime, end_date: datetime, group_by: str = None
+    ) -> Union[List[Dict], Dict[str, List[Dict]]]:
         session: Session = self.Session()
         try:
-            rows = (
-                session.query(FileError)
-                .filter(
-                    FileError.timestamp >= start_date, FileError.timestamp <= end_date
-                )
-                .all()
+            query = session.query(FileError).filter(
+                FileError.timestamp >= start_date, FileError.timestamp <= end_date
             )
+            if group_by:
+                query = query.group_by(getattr(FileError, group_by))
+            rows = query.all()
+            if group_by:
+                return self._group_results(rows, group_by)
             return [self._row_to_dict(row) for row in rows]
+        except NoSuchColumnError:
+            raise ValueError(f"Invalid group_by field: {group_by}")
         finally:
             session.close()
