@@ -8,6 +8,7 @@ from datetime import (
 from typing import (
     Dict,
     List,
+    Optional,
     Union,
 )
 
@@ -46,12 +47,12 @@ class FileError(Base):
 
 
 class FileErrorDB:
-    def __init__(self, db_file):
+    def __init__(self, db_file: str) -> None:
         self.engine = create_engine(f"sqlite:///{db_file}", echo=False)
         Base.metadata.create_all(self.engine)
         self.Session = sessionmaker(bind=self.engine)
 
-    def add_file_error(self, file_path, error):
+    def add_file_error(self, file_path: str, error: Exception) -> None:
         dir, file = os.path.split(file_path)
         extension = os.path.splitext(file)[1][1:]
         error_type = type(error).__name__
@@ -65,8 +66,14 @@ class FileErrorDB:
         )
 
     def _insert_error(
-        self, dir, file, extension, error_type, error_message, error_traceback
-    ):
+        self,
+        dir: str,
+        file: str,
+        extension: str,
+        error_type: str,
+        error_message: str,
+        error_traceback: str,
+    ) -> None:
         session = self.Session()
         try:
             new_error = FileError(
@@ -85,10 +92,10 @@ class FileErrorDB:
         finally:
             session.close()
 
-    def delete_error_by_id(self, error_id):
+    def delete_error_by_id(self, id: int) -> bool:
         session = self.Session()
         try:
-            error = session.query(FileError).filter_by(id=error_id).first()
+            error = session.query(FileError).filter_by(id=id).first()
             if error:
                 session.delete(error)
                 session.commit()
@@ -102,7 +109,7 @@ class FileErrorDB:
         finally:
             session.close()
 
-    def clean_database(self):
+    def clean_database(self) -> bool:
         session = self.Session()
         try:
             session.query(FileError).delete()
@@ -127,7 +134,9 @@ class FileErrorDB:
             "error_traceback": row.error_traceback,
         }
 
-    def _group_results(self, rows, group_by):
+    def _group_results(
+        self, rows: List[FileError], group_by: str
+    ) -> Dict[str, List[Dict]]:
         if group_by not in FileError.__table__.columns:
             raise ValueError(f"Invalid group_by field: {group_by}")
 
@@ -140,7 +149,7 @@ class FileErrorDB:
         return grouped_results
 
     def get_all_errors(
-        self, group_by: str = None
+        self, group_by: Optional[str] = None
     ) -> Union[List[Dict], Dict[str, List[Dict]]]:
         session: Session = self.Session()
         try:
@@ -157,7 +166,7 @@ class FileErrorDB:
             session.close()
 
     def get_errors_by_type(
-        self, error_type: str, group_by: str = None
+        self, error_type: str, group_by: Optional[str] = None
     ) -> Union[List[Dict], Dict[str, List[Dict]]]:
         session: Session = self.Session()
         try:
@@ -174,11 +183,11 @@ class FileErrorDB:
             session.close()
 
     def get_errors_by_extension(
-        self, file_extension: str, group_by: str = None
+        self, extension: str, group_by: Optional[str] = None
     ) -> Union[List[Dict], Dict[str, List[Dict]]]:
         session: Session = self.Session()
         try:
-            query = session.query(FileError).filter_by(file_extension=file_extension)
+            query = session.query(FileError).filter_by(extension=extension)
             if group_by:
                 query = query.group_by(getattr(FileError, group_by))
             rows = query.all()
@@ -191,7 +200,7 @@ class FileErrorDB:
             session.close()
 
     def get_errors_by_date_range(
-        self, start_date: datetime, end_date: datetime, group_by: str = None
+        self, start_date: datetime, end_date: datetime, group_by: Optional[str] = None
     ) -> Union[List[Dict], Dict[str, List[Dict]]]:
         session: Session = self.Session()
         try:
